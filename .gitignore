@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.wrangler/
+
+# Secrets & local env — never commit
+.dev.vars
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# Generated artefacts (private user data / temporary bootstrap files)
+*.pdf
+!docs/**/*.pdf
+admin-bootstrap*.sql
+exports/
+coverage/
+
+# Test artefacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+vitest-report/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.log
+npm-debug.log*

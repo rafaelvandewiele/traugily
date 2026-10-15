@@ -1,0 +1,41 @@
+# Traugily environment variables — PLACEHOLDERS ONLY. Never commit real secrets.
+# Copy to .dev.vars for local development (gitignored).
+
+# --- Environment ---
+ENVIRONMENT=local
+APP_URL=http://localhost:5173
+SUPPORT_EMAIL=support@example.com
+LOG_LEVEL=info
+
+# --- Transactional email (provider: resend | outbox) ---
+# 'outbox' records emails in the D1 mail_log table for local development.
+EMAIL_PROVIDER=outbox
+RESEND_API_KEY=
+RESEND_FROM=Traugily <onboarding@resend.dev>
+
+# --- AI layer (provider: template | openai) ---
+# 'template' = deterministic fallback only, no external calls.
+AI_PROVIDER=template
+AI_API_KEY=
+AI_API_BASE_URL=
+
+# --- Stripe (test keys for development) ---
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_PRICE_ID=price_local_placeholder
+STRIPE_CURRENCY=eur
+STRIPE_TRIAL_DAYS=0
+
+# --- Google OAuth (https://console.cloud.google.com/apis/credentials) ---
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# --- Apple Sign In (https://developer.apple.com/account/resources) ---
+APPLE_CLIENT_ID=
+APPLE_CLIENT_SECRET=
+
+# --- Private asset signing (generate: openssl rand -base64 32) ---
+ASSET_SIGNING_SECRET=
+
+# --- Admin bootstrap (optional; prefer: npm run admin:create) ---
+ADMIN_EMAIL=
