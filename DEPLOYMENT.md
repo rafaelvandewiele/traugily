@@ -152,7 +152,7 @@ npx wrangler secret put STRIPE_WEBHOOK_SECRET --env production
    one **recurring price** (monthly, €5.00, currency EUR). Note the price id
    (`price_…`) → set as `STRIPE_PRICE_ID` per environment.
 2. **Webhook endpoint:** Developers → Webhooks → Add endpoint, URL
-   `https://app.traugily.example/api/v1/stripe/webhook` (use the preview URL
+   `https://app.traugily.example/api/v1/billing/webhook` (use the preview URL
    for the preview environment). Select events:
    `checkout.session.completed`, `customer.subscription.created`,
    `customer.subscription.updated`, `customer.subscription.deleted`,
@@ -168,7 +168,7 @@ npx wrangler secret put STRIPE_WEBHOOK_SECRET --env production
 7. **Invoice emails:** Stripe sends invoices by default; the app also emails a
    payment-success note referencing the invoice on `invoice.paid`.
 8. **Local webhook testing:**
-   `npx stripe listen --forward-to http://localhost:5173/api/v1/stripe/webhook`
+   `npx stripe listen --forward-to http://localhost:5173/api/v1/billing/webhook`
    and put the printed `whsec_…` in `.dev.vars`.
 9. **Retry testing:** Dashboard → Webhooks → your endpoint → "Resend" an
    event; confirm no duplicate entitlement/reminder rows.

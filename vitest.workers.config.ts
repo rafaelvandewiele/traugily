@@ -7,7 +7,14 @@ export default defineConfig(async () => {
     plugins: [
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
-        miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
+        miniflare: {
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            // Test-only secret so the Stripe webhook route can verify signatures
+            // in integration tests. Never set this in any real environment.
+            STRIPE_WEBHOOK_SECRET: 'whsec_test_secret',
+          },
+        },
       }),
     ],
     test: {

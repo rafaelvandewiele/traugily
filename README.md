@@ -114,12 +114,16 @@ security/privacy checklist).
 - `npm run typecheck` — passing
 - `npm run lint` — 0 errors (2 react-refresh warnings on context files)
 - `npm test` — 50 passing
-- `npm run test:workers` — 14 passing (auth+CSRF, workout sync & conflict
-  resolution, member flow, cron idempotency incl. 14-day cancellation)
+- `npm run test:workers` — 23 passing (auth+CSRF, workout sync & conflict
+  resolution, member flow, cron idempotency incl. 14-day cancellation,
+  Stripe webhook signature verification + duplicate-event idempotency,
+  plan-length before/after diff with confirmation gate, recovery-conflict
+  planner warnings with safer alternatives, PDF report generation with
+  planned/actual data, admin RBAC denial + audited flag changes)
 - `npm run build` + `wrangler deploy --dry-run` — passing
-- `npx playwright test` — member flow (signup→onboarding→plan→log→finish),
-  onboarding validation, urgent pain safety flow, member/admin RBAC,
-  locale switching (desktop + mobile projects)
+- `npx playwright test` — 10 passing: member flow (signup→onboarding→plan→
+  log→finish), onboarding validation, urgent pain safety flow, member/admin
+  RBAC, locale switching (desktop + mobile projects)
 
 ## Boundaries and known follow-up work
 
