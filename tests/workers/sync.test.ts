@@ -1,6 +1,6 @@
 /** Integration tests: offline-safe sync idempotency + conflict detection + Stripe webhook guard. */
 
-import { SELF } from 'cloudflare:test';
+import { SELF, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { json, post, signupAndCookies } from './helpers';
 
@@ -65,6 +65,66 @@ describe('workout sync', () => {
     expect(conflict.body.error.code).toBe('version_conflict');
     expect(conflict.body.conflict.serverVersion).toBe(versionAfter);
     expect(Array.isArray(conflict.body.conflict.serverState.exercises)).toBe(true);
+  });
+
+  it('rebases only after an explicit member choice and audits it', async () => {
+    const { cookies, csrf } = await signupAndCookies('rebase@workers.test');
+    const start = await json<{ workoutId: string; serverVersion: number }>(
+      '/workouts/start',
+      post('/workouts/start', {}, csrf, cookies),
+    );
+    const workoutId = start.body.workoutId;
+
+    const body = (base: number, rebase: boolean) => ({
+      clientWorkoutId: workoutId,
+      baseServerVersion: base,
+      events: [
+        {
+          clientEventId: `evt-rebase-${base}-${rebase}`,
+          eventType: 'draft_note',
+          payload: { note: 'offline note' },
+          occurredAt: new Date().toISOString(),
+          serverVersion: base,
+        },
+      ],
+      ...(rebase ? { rebase: true } : {}),
+    });
+
+    // Bump the server version with a first event.
+    const first = await json<{ serverVersion: number }>(
+      `/workouts/${workoutId}/sync`,
+      post(`/workouts/${workoutId}/sync`, body(start.body.serverVersion, false), csrf, cookies),
+    );
+    expect(first.status).toBe(200);
+
+    // Stale base → conflict without rebase.
+    const stale = await json<{ error: { code: string } }>(
+      `/workouts/${workoutId}/sync`,
+      post(`/workouts/${workoutId}/sync`, body(0, false), csrf, cookies),
+    );
+    expect(stale.status).toBe(409);
+
+    // Explicit rebase (member chose "keep this device") applies the events.
+    const rebased = await json<{ serverVersion: number; events: Array<{ applied: boolean }> }>(
+      `/workouts/${workoutId}/sync`,
+      post(`/workouts/${workoutId}/sync`, body(0, true), csrf, cookies),
+    );
+    expect(rebased.status).toBe(200);
+    expect(rebased.body.events[0].applied).toBe(true);
+
+    // The resolution is recorded for operations; conflict event also kept.
+    const ops = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM operational_events WHERE kind = 'sync_rebased' AND subject = ?`,
+    )
+      .bind(workoutId)
+      .first<{ n: number }>();
+    expect(ops?.n).toBe(1);
+    const conflicts = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM operational_events WHERE kind = 'sync_conflict' AND subject = ?`,
+    )
+      .bind(workoutId)
+      .first<{ n: number }>();
+    expect(conflicts?.n).toBe(1);
   });
 
   it('rejects syncing into a finished workout', async () => {

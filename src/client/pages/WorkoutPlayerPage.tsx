@@ -94,6 +94,11 @@ export function WorkoutPlayerPage() {
   const [safety, setSafety] = useState<SafetyEvaluation | null>(null);
   const [showFinish, setShowFinish] = useState(false);
   const [syncStatus, setSyncStatus] = useState<LocalWorkoutState['status']>('synced');
+  const [conflict, setConflict] = useState<{
+    clientBaseVersion: number;
+    serverVersion: number;
+  } | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -185,6 +190,16 @@ export function WorkoutPlayerPage() {
       await load();
     } catch (err) {
       if (err instanceof ApiClientError && err.code === 'version_conflict') {
+        // Surface the conflict for an explicit choice — never overwrite silently.
+        const raw = (err.payload?.conflict ?? null) as {
+          clientBaseVersion?: number;
+          serverVersion?: number;
+        } | null;
+        setConflict({
+          clientBaseVersion: raw?.clientBaseVersion ?? local?.serverVersion ?? 0,
+          serverVersion: raw?.serverVersion ?? 0,
+        });
+        setConfirmDiscard(false);
         setSyncStatus('attention');
         return;
       }
@@ -219,6 +234,70 @@ export function WorkoutPlayerPage() {
     setLocal(next);
     setSyncStatus(next.status);
     if (online) await syncEvents();
+  }
+
+  /** Conflict choice A: keep this device's entries (explicit rebase, audited). */
+  async function resolveKeepLocal() {
+    if (!conflict) return;
+    const queued = await listQueuedEvents(workoutId);
+    try {
+      const res = await api<{ serverVersion: number }>(`/workouts/${workoutId}/sync`, {
+        method: 'POST',
+        body: {
+          clientWorkoutId: workoutId,
+          baseServerVersion: conflict.serverVersion,
+          events: queued,
+          rebase: true,
+        },
+      });
+      for (const ev of queued) await removeQueuedEvent(ev.clientEventId);
+      const next: LocalWorkoutState = {
+        workoutId,
+        serverVersion: res.serverVersion,
+        startedAt: local?.startedAt ?? detail?.startedAt ?? new Date().toISOString(),
+        pausedAt: null,
+        pausedAccumulatedMs: local?.pausedAccumulatedMs ?? 0,
+        draftState: {},
+        status: 'synced',
+        updatedAt: new Date().toISOString(),
+      };
+      await saveLocalWorkout(next);
+      setLocal(next);
+      setConflict(null);
+      setConfirmDiscard(false);
+      setSyncStatus('synced');
+      await load();
+    } catch {
+      setSyncStatus('attention'); // still conflicted; the panel stays visible
+    }
+  }
+
+  /** Conflict choice B: keep the other device's version (explicit, two-step). */
+  async function resolveKeepRemote() {
+    if (!conflict) return;
+    const queued = await listQueuedEvents(workoutId);
+    for (const ev of queued) await removeQueuedEvent(ev.clientEventId);
+    try {
+      const res = await api<{ serverVersion: number }>(`/workouts/${workoutId}/state`);
+      const next: LocalWorkoutState = {
+        workoutId,
+        serverVersion: res.serverVersion,
+        startedAt: local?.startedAt ?? detail?.startedAt ?? new Date().toISOString(),
+        pausedAt: null,
+        pausedAccumulatedMs: local?.pausedAccumulatedMs ?? 0,
+        draftState: {},
+        status: 'synced',
+        updatedAt: new Date().toISOString(),
+      };
+      await saveLocalWorkout(next);
+      setLocal(next);
+      setConflict(null);
+      setConfirmDiscard(false);
+      setSyncStatus('synced');
+      await load();
+    } catch {
+      setSyncStatus('attention');
+    }
   }
 
   function startRest(seconds: number | null) {
@@ -367,6 +446,47 @@ export function WorkoutPlayerPage() {
           {t('log.report_pain')}
         </button>
       </div>
+
+      {/* Sync conflict — member resolves explicitly; nothing is overwritten silently. */}
+      {conflict && (
+        <div
+          role="alert"
+          data-testid="sync-conflict"
+          className="card space-y-3 border-amber-300 bg-amber-50"
+        >
+          <p className="font-semibold text-stone-900">{t('state.conflict_title')}</p>
+          <p className="text-sm text-stone-700">{t('state.conflict_body')}</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="conflict-keep-local"
+              onClick={() => void resolveKeepLocal()}
+              className="btn-primary"
+            >
+              {t('state.conflict_keep_local')}
+            </button>
+            {!confirmDiscard ? (
+              <button
+                type="button"
+                data-testid="conflict-keep-remote"
+                onClick={() => setConfirmDiscard(true)}
+                className="btn-secondary"
+              >
+                {t('state.conflict_keep_remote')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-testid="conflict-confirm-remote"
+                onClick={() => void resolveKeepRemote()}
+                className="btn-danger"
+              >
+                {t('state.conflict_discard_confirm')}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Safety guidance banner — takes priority over everything else. */}
       {safety && safety.guidanceKey && (

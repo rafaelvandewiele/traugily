@@ -43,6 +43,9 @@ export const fr: Partial<Record<keyof EnDictionary, string>> = {
   'state.conflict_title': 'La séance a changé sur un autre appareil',
   'state.conflict_body':
     'Rien n’a été écrasé. Choisissez la version à conserver — les deux enregistrements restent disponibles.',
+  'state.conflict_keep_local': 'Garder les modifications de cet appareil',
+  'state.conflict_keep_remote': 'Garder la version de l’autre appareil',
+  'state.conflict_discard_confirm': 'Oui, supprimer mes saisies non synchronisées',
   'today.title': 'Aujourd’hui',
   'today.next_action': 'Votre prochaine étape',
   'today.no_session': 'Aucune séance prévue aujourd’hui',

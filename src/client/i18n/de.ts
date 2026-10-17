@@ -43,6 +43,9 @@ export const de: Partial<Record<keyof EnDictionary, string>> = {
   'state.conflict_title': 'Training wurde auf einem anderen Gerät geändert',
   'state.conflict_body':
     'Nichts wurde überschrieben. Wählen Sie, welche Version Sie behalten möchten — beide Datensätze bleiben verfügbar.',
+  'state.conflict_keep_local': 'Änderungen auf diesem Gerät behalten',
+  'state.conflict_keep_remote': 'Version des anderen Geräts behalten',
+  'state.conflict_discard_confirm': 'Ja, meine nicht synchronisierten Einträge verwerfen',
   'today.title': 'Heute',
   'today.next_action': 'Ihr nächster Schritt',
   'today.no_session': 'Heute ist keine Einheit geplant',

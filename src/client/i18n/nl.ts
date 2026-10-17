@@ -43,6 +43,9 @@ export const nl: Partial<Record<keyof EnDictionary, string>> = {
   'state.conflict_title': 'Training is gewijzigd op een ander apparaat',
   'state.conflict_body':
     'Er is niets overschreven. Kies welke versie je wilt behouden — beide records blijven beschikbaar.',
+  'state.conflict_keep_local': 'Wijzigingen op dit apparaat behouden',
+  'state.conflict_keep_remote': 'Versie van het andere apparaat behouden',
+  'state.conflict_discard_confirm': 'Ja, mijn niet-gesynchroniseerde invoer verwijderen',
   'today.title': 'Vandaag',
   'today.next_action': 'Je volgende stap',
   'today.no_session': 'Geen sessie gepland vandaag',

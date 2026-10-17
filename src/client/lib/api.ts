@@ -9,6 +9,8 @@ export class ApiClientError extends Error {
     message: string,
     public field?: string,
     public details?: Record<string, string>,
+    /** Full error body (e.g. conflict payloads) for recovery flows. */
+    public payload?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiClientError';
@@ -65,6 +67,7 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
       body?.error?.message ?? 'Something went wrong. Please try again.',
       body?.error?.field,
       body?.error?.details,
+      (payload as Record<string, unknown> | null) ?? undefined,
     );
   }
   return payload as T;

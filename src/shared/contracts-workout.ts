@@ -75,6 +75,9 @@ export const syncWorkoutSchema = z.object({
   baseServerVersion: z.number().int().min(0),
   events: z.array(syncEventSchema).min(1).max(200),
   draftState: z.record(z.string(), z.unknown()).optional(),
+  /** Explicit member choice to rebase after a visible conflict; skips the
+   *  version check but still records a `sync_rebased` operational event. */
+  rebase: z.boolean().optional(),
 });
 
 /* ------------------------------ Reports ------------------------------ */

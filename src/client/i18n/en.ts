@@ -46,6 +46,9 @@ export const en = {
   'state.conflict_title': 'Workout changed on another device',
   'state.conflict_body':
     'Nothing was overwritten. Choose which version to keep — both records stay available.',
+  'state.conflict_keep_local': 'Keep this device’s changes',
+  'state.conflict_keep_remote': 'Keep the other device’s version',
+  'state.conflict_discard_confirm': 'Yes, discard my unsynced entries',
 
   'today.title': 'Today',
   'today.next_action': 'Your next step',

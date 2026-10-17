@@ -33,7 +33,8 @@ workoutSyncRoutes.post('/:id/sync', async (c) => {
   }
 
   const baseVersion = parsed.data.baseServerVersion;
-  if (baseVersion !== workout.server_version) {
+  const rebase = parsed.data.rebase === true;
+  if (baseVersion !== workout.server_version && !rebase) {
     // Never silently overwrite: return server state so the client resolves visibly.
     const serverState = await loadWorkoutState(c.env, workout.id);
     await recordOperationalEvent(c.env.DB, {
@@ -62,6 +63,22 @@ workoutSyncRoutes.post('/:id/sync', async (c) => {
       },
       409,
     );
+  }
+  if (rebase && baseVersion !== workout.server_version) {
+    // The member explicitly chose "keep this device's changes" after seeing
+    // the conflict — auditable, never a silent overwrite.
+    await recordOperationalEvent(c.env.DB, {
+      kind: 'sync_rebased',
+      severity: 'info',
+      subject: workout.id,
+      detail: {
+        baseVersion,
+        serverVersion: workout.server_version,
+        eventCount: parsed.data.events.length,
+        resolution: 'local_device',
+      },
+      requestId: c.get('requestId'),
+    });
   }
 
   const results = [];
