@@ -1,6 +1,6 @@
 /** Email verification + password reset request/confirm pages. */
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useI18n } from '../i18n';
@@ -12,7 +12,7 @@ export function VerifyEmailPage() {
   const [status, setStatus] = useState<'idle' | 'ok' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
-  useState(() => {
+  useEffect(() => {
     if (token) {
       api('/auth/verify-email', { method: 'POST', body: { token } })
         .then(() => setStatus('ok'))
@@ -21,7 +21,7 @@ export function VerifyEmailPage() {
           setMessage(e.message);
         });
     }
-  });
+  }, [token]);
 
   return (
     <div className="mx-auto max-w-md px-4 py-16">
