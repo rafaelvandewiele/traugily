@@ -1,112 +1,129 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "traugily",
-  "main": "src/server/index.ts",
-  "compatibility_date": "2026-08-22",
-  "compatibility_flags": ["nodejs_compat"],
-  "observability": {
-    "enabled": true,
-  },
-  "assets": {
-    "binding": "ASSETS",
-    "directory": "./dist/client",
-    "not_found_handling": "single-page-application",
-    "html_handling": "auto-trailing-slash",
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "traugily_db",
-      "database_id": "local-traugily-db",
-      "migrations_dir": "migrations",
-    },
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA",
-      "bucket_name": "traugily-media-local",
-    },
-  ],
-  "kv_namespaces": [
-    {
-      "binding": "CACHE",
-      "id": "local-traugily-cache",
-    },
-  ],
-  "triggers": { "crons": ["17 * * * *", "40 4 * * *"] },
-  "vars": {
-    "ENVIRONMENT": "local",
-    "APP_URL": "http://localhost:5173",
-    "EMAIL_PROVIDER": "outbox",
-    "RESEND_FROM": "Traugily <onboarding@resend.dev>",
-    "AI_PROVIDER": "template",
-    "STRIPE_PRICE_ID": "price_local_placeholder",
-    "STRIPE_CURRENCY": "eur",
-    "STRIPE_TRIAL_DAYS": "0",
-    "SUPPORT_EMAIL": "support@traugily.example",
-    "LOG_LEVEL": "info",
-  },
-  "env": {
-    "preview": {
-      "name": "traugily-preview",
-      "vars": {
-        "ENVIRONMENT": "preview",
-        "APP_URL": "https://preview.traugily.example.workers.dev",
-        "STRIPE_PRICE_ID": "price_preview_placeholder",
-        "STRIPE_TRIAL_DAYS": "14",
-      },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "traugily-preview",
-          "database_id": "REPLACE_WITH_PREVIEW_D1_ID",
-          "migrations_dir": "migrations",
-        },
-      ],
-      "r2_buckets": [
-        {
-          "binding": "MEDIA",
-          "bucket_name": "traugily-media-preview",
-        },
-      ],
-      "kv_namespaces": [
-        {
-          "binding": "CACHE",
-          "id": "REPLACE_WITH_PREVIEW_KV_ID",
-        },
-      ],
-      "triggers": { "crons": ["17 * * * *", "40 4 * * *"] },
-    },
-    "production": {
-      "name": "traugily",
-      "vars": {
-        "ENVIRONMENT": "production",
-        "APP_URL": "https://app.traugily.example",
-        "STRIPE_PRICE_ID": "price_REPLACE_WITH_PRODUCTION_PRICE_ID",
-        "STRIPE_TRIAL_DAYS": "14",
-        "LOG_LEVEL": "info",
-      },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "traugily-production",
-          "database_id": "REPLACE_WITH_PRODUCTION_D1_ID",
-          "migrations_dir": "migrations",
-        },
-      ],
-      "r2_buckets": [
-        {
-          "binding": "MEDIA",
-          "bucket_name": "traugily-media-production",
-        },
-      ],
-      "kv_namespaces": [
-        {
-          "binding": "CACHE",
-          "id": "REPLACE_WITH_PRODUCTION_KV_ID",
-        },
-      ],
-      "triggers": { "crons": ["17 * * * *", "40 4 * * *"] },
-    },
-  },
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "traugily",
+	"main": "src/server/index.ts",
+	"compatibility_date": "2026-08-22",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true
+	},
+	"assets": {
+		"binding": "ASSETS",
+		"directory": "./dist/client",
+		"not_found_handling": "single-page-application",
+		"html_handling": "auto-trailing-slash"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "traugily_db",
+			"database_id": "local-traugily-db",
+			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "MEDIA",
+			"bucket_name": "traugily-media-local"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "CACHE",
+			"id": "local-traugily-cache"
+		}
+	],
+	"triggers": {
+		"crons": [
+			"17 * * * *",
+			"40 4 * * *"
+		]
+	},
+	"vars": {
+		"ENVIRONMENT": "local",
+		"APP_URL": "http://localhost:5173",
+		"EMAIL_PROVIDER": "outbox",
+		"RESEND_FROM": "Traugily <onboarding@resend.dev>",
+		"AI_PROVIDER": "template",
+		"STRIPE_PRICE_ID": "price_local_placeholder",
+		"STRIPE_CURRENCY": "eur",
+		"STRIPE_TRIAL_DAYS": "0",
+		"SUPPORT_EMAIL": "support@traugily.example",
+		"LOG_LEVEL": "info"
+	},
+	"env": {
+		"preview": {
+			"name": "traugily-preview",
+			"vars": {
+				"ENVIRONMENT": "preview",
+				"APP_URL": "https://preview.traugily.example.workers.dev",
+				"STRIPE_PRICE_ID": "price_preview_placeholder",
+				"STRIPE_TRIAL_DAYS": "14"
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "traugily-db-preview",
+					"database_id": "80292fbc-a62c-4f1c-9c66-69564b192e5f",
+					"migrations_dir": "migrations"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "MEDIA",
+					"bucket_name": "traugily-media-preview"
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "CACHE",
+					"preview_id": "73e57f2d1de6443e934a08bf9dd1f3a9"
+				}
+			],
+			"triggers": {
+				"crons": [
+					"17 * * * *",
+					"40 4 * * *"
+				]
+			}
+		},
+		"production": {
+			"name": "traugily",
+			"vars": {
+				"ENVIRONMENT": "production",
+				"APP_URL": "https://app.traugily.example",
+				"STRIPE_PRICE_ID": "price_REPLACE_WITH_PRODUCTION_PRICE_ID",
+				"STRIPE_TRIAL_DAYS": "14",
+				"LOG_LEVEL": "info"
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "traugily-db-production",
+					"database_id": "e57cdb8d-f812-4088-bea3-41233e611373",
+					"migrations_dir": "migrations"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "MEDIA",
+					"bucket_name": "traugily-media-production"
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "CACHE",
+					"id": "948efc3e030c4e1298b325210af46b59"
+				}
+			],
+			"triggers": {
+				"crons": [
+					"17 * * * *",
+					"40 4 * * *"
+				]
+			}
+		}
+	}
 }
