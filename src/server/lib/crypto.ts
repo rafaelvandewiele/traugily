@@ -5,7 +5,13 @@
 
 const encoder = new TextEncoder();
 
-export const PBKDF2_ITERATIONS = 210_000;
+/**
+ * PBKDF2 iteration count. Must stay at or below 100,000: that is the maximum
+ * the Cloudflare Workers Web Crypto runtime supports (higher counts throw
+ * `Pbkdf2 failed` in production, as seen 2026-10-17). Per-user counts are
+ * stored inside each hash string, so lowering this is forward-compatible.
+ */
+export const PBKDF2_ITERATIONS = 100_000;
 const SALT_BYTES = 16;
 const KEY_BITS = 256;
 

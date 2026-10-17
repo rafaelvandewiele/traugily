@@ -34,7 +34,9 @@ const normalized = email.trim().toLowerCase();
 const now = new Date().toISOString();
 const password = randomBytes(12).toString('base64url') + 'A1';
 const salt = randomBytes(16).toString('base64');
-const iterations = 210000;
+// Must match PBKDF2_ITERATIONS in src/server/lib/crypto.ts and stay ≤100000
+// (the Cloudflare Workers Web Crypto cap).
+const iterations = 100000;
 
 // Compute PBKDF2 hash with Node WebCrypto (same format as the Worker).
 const { subtle } = globalThis.crypto;
@@ -70,10 +72,14 @@ VALUES (COALESCE((SELECT id FROM users WHERE email_normalized = '${normalized}')
 const tmp = join(root, `admin-bootstrap-${Date.now()}.sql`);
 writeFileSync(tmp, sql);
 try {
-  execFileSync('npx', ['wrangler', 'd1', 'execute', db, mode, ...(env ? env.split(' ') : []), '--file', tmp, '--yes'], {
-    stdio: 'inherit',
-    cwd: root,
-  });
+  execFileSync(
+    'npx',
+    ['wrangler', 'd1', 'execute', db, mode, ...(env ? env.split(' ') : []), '--file', tmp, '--yes'],
+    {
+      stdio: 'inherit',
+      cwd: root,
+    },
+  );
   console.log(`\nAdmin ready: ${normalized}`);
   console.log(`Temporary password (shown once, store it safely): ${password}`);
   console.log('The user must reset this password after first sign-in.');
