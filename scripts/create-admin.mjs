@@ -20,7 +20,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const email = args.find((a, i) => args[i - 1] === '--email') ?? process.env.ADMIN_EMAIL;
 const mode = args.includes('--remote') ? '--remote' : '--local';
-const db = process.env.WRANGLER_DB_NAME ?? 'traugily_db';
+const env = args.includes('--remote') ? '--env production' : '';
+const db = args.includes('--remote')
+  ? (process.env.WRANGLER_DB_NAME ?? 'DB')
+  : (process.env.WRANGLER_DB_NAME ?? 'traugily_db');
 
 if (!email || !email.includes('@')) {
   console.error('Usage: npm run admin:create -- --email <address> [--remote]');
@@ -67,7 +70,7 @@ VALUES (COALESCE((SELECT id FROM users WHERE email_normalized = '${normalized}')
 const tmp = join(root, `admin-bootstrap-${Date.now()}.sql`);
 writeFileSync(tmp, sql);
 try {
-  execFileSync('npx', ['wrangler', 'd1', 'execute', db, mode, '--file', tmp, '--yes'], {
+  execFileSync('npx', ['wrangler', 'd1', 'execute', db, mode, ...(env ? env.split(' ') : []), '--file', tmp, '--yes'], {
     stdio: 'inherit',
     cwd: root,
   });

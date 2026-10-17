@@ -18,21 +18,21 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "traugily_db",
-			"database_id": "local-traugily-db",
+			"database_name": "traugily-db-production",
+			"database_id": "e57cdb8d-f812-4088-bea3-41233e611373",
 			"migrations_dir": "migrations"
 		}
 	],
 	"r2_buckets": [
 		{
 			"binding": "MEDIA",
-			"bucket_name": "traugily-media-local"
+			"bucket_name": "traugily-media-production"
 		}
 	],
 	"kv_namespaces": [
 		{
 			"binding": "CACHE",
-			"id": "local-traugily-cache"
+			"id": "948efc3e030c4e1298b325210af46b59"
 		}
 	],
 	"triggers": {
@@ -42,14 +42,14 @@
 		]
 	},
 	"vars": {
-		"ENVIRONMENT": "local",
-		"APP_URL": "http://localhost:5173",
+		"ENVIRONMENT": "production",
+		"APP_URL": "https://app.traugily.example",
 		"EMAIL_PROVIDER": "outbox",
 		"RESEND_FROM": "Traugily <onboarding@resend.dev>",
 		"AI_PROVIDER": "template",
-		"STRIPE_PRICE_ID": "price_local_placeholder",
+		"STRIPE_PRICE_ID": "price_REPLACE_WITH_PRODUCTION_PRICE_ID",
 		"STRIPE_CURRENCY": "eur",
-		"STRIPE_TRIAL_DAYS": "0",
+		"STRIPE_TRIAL_DAYS": "14",
 		"SUPPORT_EMAIL": "support@traugily.example",
 		"LOG_LEVEL": "info"
 	},
