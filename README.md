@@ -125,8 +125,8 @@ security/privacy checklist).
 - `npx playwright test` — 12 passing: member flow (signup→onboarding→plan→
   log→finish), onboarding validation, offline workout sync (local
   persistence, reconnect, visible conflict, both resolution paths),
-  urgent pain safety flow, member/admin RBAC, locale switching
-  (desktop + mobile projects)
+  urgent pain safety flow, member/admin RBAC, locale switching across
+  en/nl/fr/de with stored-value preservation (desktop + mobile projects)
 
 ## Boundaries and known follow-up work
 

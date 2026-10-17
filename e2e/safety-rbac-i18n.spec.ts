@@ -51,7 +51,7 @@ test.describe('RBAC', () => {
 });
 
 test.describe('locale switching', () => {
-  test('switching to Dutch changes display conventions but keeps stored values', async ({
+  test('locale switching renders en/nl/fr/de but keeps stored values', async ({
     page,
     request,
   }) => {
@@ -63,7 +63,7 @@ test.describe('locale switching', () => {
     await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 
     // Switch to Dutch
-    await page.getByLabel('Language').selectOption('nl');
+    await page.locator('#locale-select').selectOption('nl');
     await expect(page.getByRole('heading', { name: 'Vandaag', exact: true })).toBeVisible();
 
     // Navigation translated
@@ -74,5 +74,22 @@ test.describe('locale switching', () => {
     await page.getByTestId('weight-input').fill('80.5');
     await page.getByTestId('save-weighin').click();
     await expect(page.getByTestId('weight-latest')).toContainText('80,5'); // nl decimal separator
+
+    // French renders from the same stored session
+    await page.locator('#locale-select').selectOption('fr');
+    await expect(page.getByRole('heading', { name: 'Progrès', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Progrès' }).first()).toBeVisible();
+    await expect(page.getByTestId('weight-latest')).toContainText('80,5'); // fr decimal separator
+
+    // German renders from the same stored session
+    await page.locator('#locale-select').selectOption('de');
+    await expect(page.getByRole('heading', { name: 'Fortschritt', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Fortschritt' }).first()).toBeVisible();
+    await expect(page.getByTestId('weight-latest')).toContainText('80,5'); // de decimal separator
+
+    // Back to English: same stored weight, display convention restored
+    await page.locator('#locale-select').selectOption('en');
+    await expect(page.getByRole('heading', { name: 'Progress', exact: true })).toBeVisible();
+    await expect(page.getByTestId('weight-latest')).toContainText('80.5'); // en decimal point
   });
 });
