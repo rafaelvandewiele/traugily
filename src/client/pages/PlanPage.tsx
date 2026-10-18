@@ -166,9 +166,13 @@ export function PlanPage() {
             disabled={!ackChecked || busy}
             className="btn-primary mt-4"
             data-testid="accept-plan"
+            title={!ackChecked ? t('plan.accept_confirm') : undefined}
           >
             {t('action.confirm')}
           </button>
+          {!ackChecked && (
+            <p className="mt-2 text-xs text-amber-800">{t('plan.accept_confirm')}</p>
+          )}
         </section>
       )}
 
