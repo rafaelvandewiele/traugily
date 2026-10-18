@@ -138,8 +138,20 @@ export async function generateReportPdf(
     sections.push({ kind: 'bullets', items: trendItems.length > 0 ? trendItems : [h.noWeighIns] });
     sections.push({ kind: 'paragraph', text: h.estimateNotice });
 
-    if (input.detailLevel !== 'summary') {
-      sections.push({ kind: 'heading', text: h.sessions });
+    const completedSets = setLogs.results.filter((r) => r.status === 'completed').length;
+    const sessionDates = new Set(setLogs.results.map((r) => String(r.started_at).slice(0, 10)));
+
+    // §12 training (planned vs actual): summary gets an aggregate paragraph so the
+    // section is never silently dropped; standard/detailed get the full per-set table.
+    sections.push({ kind: 'heading', text: h.sessions });
+    if (input.detailLevel === 'summary') {
+      sections.push({
+        kind: 'paragraph',
+        text: `${sessionDates.size} ${h.sessionsSummary} · ${completedSets} ${h.completedSets}`,
+      });
+    } else if (setLogs.results.length === 0) {
+      sections.push({ kind: 'bullets', items: [h.noSessions] });
+    } else {
       sections.push({
         kind: 'table',
         table: {
@@ -162,47 +174,61 @@ export async function generateReportPdf(
       });
     }
 
-    if (input.detailLevel === 'detailed' && adaptations.results.length > 0) {
+    // §12 adaptations: heading always present at standard/detailed (empty-state
+    // keeps section order stable); full per-proposal list at detailed.
+    if (input.detailLevel !== 'summary') {
       sections.push({ kind: 'heading', text: h.adaptations });
       sections.push({
         kind: 'bullets',
-        items: adaptations.results.map(
-          (a) => `${a.trigger_code} → ${a.status} (effective ${a.effective_date})`,
-        ),
+        items:
+          adaptations.results.length > 0
+            ? adaptations.results.map(
+                (a) => `${a.trigger_code} → ${a.status} (effective ${a.effective_date})`,
+              )
+            : [h.noAdaptations],
       });
     }
 
-    if (targets.results.length > 0) {
-      sections.push({ kind: 'heading', text: h.nutrition });
-      sections.push({
-        kind: 'bullets',
-        items: targets.results.map(
-          (t) =>
-            `${t.phase_key ?? 'current'}: ${t.energy_kcal} kcal, P ${t.protein_g}g, C ${t.carbs_g}g, F ${t.fat_g}g (${t.basis})`,
-        ),
-      });
-    }
+    // §12 nutrition: always rendered; estimates explicitly labelled (AC R 01).
+    sections.push({ kind: 'heading', text: h.nutrition });
+    sections.push({
+      kind: 'bullets',
+      items:
+        targets.results.length > 0
+          ? targets.results.map(
+              (t) =>
+                `${t.phase_key ?? 'current'}: ${t.energy_kcal} kcal, P ${t.protein_g}g, C ${t.carbs_g}g, F ${t.fat_g}g (${t.basis})`,
+            )
+          : [h.noNutrition],
+    });
 
-    if (painReports.results.length > 0) {
-      sections.push({ kind: 'heading', text: h.safety });
-      sections.push({
-        kind: 'bullets',
-        items: painReports.results.map(
-          (p) =>
-            `${formatDateForLocale(String(p.reported_at).slice(0, 10), locale)}: ${p.severity} (${p.body_area}) → ${h.appGuidanceApplied}`,
-        ),
-      });
-    }
+    // §12 safety: always rendered; empty-state confirms app-guidance posture.
+    sections.push({ kind: 'heading', text: h.safety });
+    sections.push({
+      kind: 'bullets',
+      items:
+        painReports.results.length > 0
+          ? painReports.results.map(
+              (p) =>
+                `${formatDateForLocale(String(p.reported_at).slice(0, 10), locale)}: ${p.severity} (${p.body_area}) → ${h.appGuidanceApplied}`,
+            )
+          : [h.noSafety],
+    });
 
     const pdf = await buildReportPdf({
       title: h.title,
       subtitle: `${formatDateForLocale(input.periodStart, locale)} – ${formatDateForLocale(input.periodEnd, locale)} · ${input.detailLevel}`,
       meta: [
         { label: h.reportLanguage, value: locale.toUpperCase() },
+        {
+          label: h.period,
+          value: `${formatDateForLocale(input.periodStart, locale)} – ${formatDateForLocale(input.periodEnd, locale)}`,
+        },
+        { label: h.detailLevel, value: input.detailLevel },
         { label: h.timezone, value: tz },
         { label: h.planVersion, value: plan ? `v${plan.version}` : '—' },
         { label: h.generated, value: nowIso() },
-        { label: h.notices, value: '' },
+        { label: h.notices, value: h.estimateNotice },
       ],
       sections,
     });

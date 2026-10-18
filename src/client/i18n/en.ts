@@ -8,6 +8,7 @@ export const en = {
   'nav.plan': 'Plan',
   'nav.log': 'Log',
   'nav.progress': 'Progress',
+  'nav.reports': 'Reports',
   'nav.account': 'Account',
   'nav.admin': 'Admin',
 
@@ -146,6 +147,10 @@ export const en = {
   'log.apply.remaining_sets': 'Remaining sets',
   'log.apply.note_only': 'Only as a note',
   'log.no_executed_sets': 'Finish needs at least one logged set. Keep it as a draft or discard it.',
+  'log.set_empty': 'Enter reps, weight, RPE or RIR before saving — empty sets are not saved.',
+  'log.set_saved': 'Set saved.',
+  'log.set_queued_offline': 'You are offline — the set is saved on this device and will sync.',
+  'log.finish_failed': 'Could not finish the workout. Please try again.',
 
   'safety.guidance.urgent':
     'Stop training now. If you have chest pain, fainting, dizziness, sudden shortness of breath or similar symptoms, seek urgent medical help immediately. Traugily cannot assess your symptoms.',
@@ -232,6 +237,15 @@ export const en = {
   'reports.status.failed': 'Failed',
   'reports.download': 'Download PDF',
   'reports.estimate_notice': 'All estimates in the report are labelled.',
+  'reports.start_date': 'Start date',
+  'reports.end_date': 'End date',
+  'reports.language': 'Report language',
+  'reports.history': 'Past reports',
+  'reports.empty': 'No reports yet',
+  'reports.empty_hint': 'Pick a period above and generate your first PDF.',
+  'reports.polling': 'Generating your PDF — checking status…',
+  'reports.error_dates_required': 'Pick a start and end date.',
+  'reports.error_date_order': 'End date must be on or after start date.',
 
   'error.network': 'We could not reach the server. Your local changes are safe.',
   'error.validation': 'Please check the highlighted fields.',

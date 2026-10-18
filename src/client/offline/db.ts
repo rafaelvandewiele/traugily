@@ -80,7 +80,9 @@ export async function enqueueEvent(event: QueuedEvent): Promise<void> {
 
 export async function listQueuedEvents(workoutId: string): Promise<QueuedEvent[]> {
   const all = await tx<QueuedEvent[]>('events', 'readonly', (s) => s.getAll());
-  return all.filter((e) => e.payload?.workoutId === workoutId || true).slice(0, 200);
+  return all
+    .filter((e) => (e.payload?.workoutId as string | undefined) === workoutId)
+    .slice(0, 200);
 }
 
 export async function removeQueuedEvent(clientEventId: string): Promise<void> {
@@ -98,7 +100,8 @@ export async function getMeta<T>(key: string): Promise<T | undefined> {
   return row?.value;
 }
 
-/** Timestamp-based elapsed time: correct after backgrounding on iOS/Android. */
+/** Timestamp-based elapsed time: correct after backgrounding on iOS/Android.
+ * Returns **milliseconds** (use `computeElapsedSeconds` at render boundaries). */
 export function computeElapsed(
   startedAtIso: string,
   pausedAtIso: string | null,
@@ -111,4 +114,47 @@ export function computeElapsed(
     return Math.max(0, Date.parse(pausedAtIso) - started - pausedAccumulatedMs);
   }
   return Math.max(0, base);
+}
+
+/** Elapsed whole seconds for rendering (mm:ss). Converts the ms boundary. */
+export function computeElapsedSeconds(
+  startedAtIso: string,
+  pausedAtIso: string | null,
+  pausedAccumulatedMs: number,
+  nowMs = Date.now(),
+): number {
+  return Math.floor(computeElapsed(startedAtIso, pausedAtIso, pausedAccumulatedMs, nowMs) / 1000);
+}
+
+/** Freeze the clock: record when the pause started (idempotent). */
+export function pauseWorkoutState(
+  state: LocalWorkoutState,
+  nowIso: string = new Date().toISOString(),
+): LocalWorkoutState {
+  if (state.pausedAt) return state;
+  return { ...state, pausedAt: nowIso, updatedAt: nowIso };
+}
+
+/** Resume the clock: fold the paused span into the accumulator. */
+export function resumeWorkoutState(
+  state: LocalWorkoutState,
+  nowIso: string = new Date().toISOString(),
+): LocalWorkoutState {
+  if (!state.pausedAt) return state;
+  const pausedMs = Math.max(0, Date.parse(nowIso) - Date.parse(state.pausedAt));
+  return {
+    ...state,
+    pausedAt: null,
+    pausedAccumulatedMs: state.pausedAccumulatedMs + pausedMs,
+    updatedAt: nowIso,
+  };
+}
+
+/** Shift a rest deadline forward by the paused span so resume continues where it left off. */
+export function shiftRestDeadline(
+  deadlineMs: number,
+  pausedAtMs: number,
+  resumedAtMs: number,
+): number {
+  return deadlineMs + Math.max(0, resumedAtMs - pausedAtMs);
 }

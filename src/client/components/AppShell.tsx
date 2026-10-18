@@ -1,7 +1,7 @@
 /** App shell: bottom navigation on mobile, sidebar on desktop, offline + install banners. */
 
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Activity, CalendarRange, ClipboardList, LineChart, ShieldCheck, User } from 'lucide-react';
+import { Activity, CalendarRange, ClipboardList, FileText, LineChart, ShieldCheck, User } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useSession } from '../hooks/useSession';
 import { useInstallPrompt, useOnline } from '../hooks/useOnline';
@@ -19,6 +19,7 @@ export function AppShell() {
     { to: '/plan', labelKey: 'nav.plan' as const, icon: CalendarRange },
     { to: '/log', labelKey: 'nav.log' as const, icon: ClipboardList },
     { to: '/progress', labelKey: 'nav.progress' as const, icon: LineChart },
+    { to: '/reports', labelKey: 'nav.reports' as const, icon: FileText },
     { to: '/account', labelKey: 'nav.account' as const, icon: User },
   ];
 
@@ -125,7 +126,7 @@ export function AppShell() {
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden"
       >
-        <ul className="mx-auto grid max-w-md grid-cols-5">
+        <ul className="mx-auto grid max-w-md grid-cols-6">
           {navItems.map((item) => (
             <li key={item.to}>
               <NavLink

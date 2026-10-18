@@ -17,13 +17,16 @@ import { useI18n } from '../i18n';
 import { useOnline } from '../hooks/useOnline';
 import { ErrorState, LoadingState, OfflineBadge } from '../components/ui-states';
 import {
-  computeElapsed,
+  computeElapsedSeconds,
   enqueueEvent,
   listQueuedEvents,
   loadLocalWorkout,
+  pauseWorkoutState,
   removeLocalWorkout,
   removeQueuedEvent,
+  resumeWorkoutState,
   saveLocalWorkout,
+  shiftRestDeadline,
   type LocalWorkoutState,
 } from '../offline/db';
 
@@ -77,11 +80,13 @@ export function WorkoutPlayerPage() {
   const [error, setError] = useState<string | null>(null);
   const [local, setLocal] = useState<LocalWorkoutState | null>(null);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
   const [restRemaining, setRestRemaining] = useState<number | null>(null);
   const [restPaused, setRestPaused] = useState(false);
   const restDeadline = useRef<number | null>(null);
+  const restPausedAt = useRef<number | null>(null);
+  // `paused` is derived from persisted `local.pausedAt` so a reload/close keeps the frozen clock.
+  const [elapsed, setElapsed] = useState(0);
+  const paused = local?.pausedAt != null;
   const [setValues, setSetValues] = useState<
     Record<string, { reps: string; weight: string; rpe: string }>
   >({});
@@ -100,6 +105,8 @@ export function WorkoutPlayerPage() {
   } | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [setErrors, setSetErrors] = useState<Record<string, string | null>>({});
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -127,34 +134,87 @@ export function WorkoutPlayerPage() {
   }, [load]);
 
   // Session timer — timestamp based so it stays correct after backgrounding.
+  // computeElapsedSeconds converts the ms boundary to whole seconds for mm:ss rendering.
   const workoutStartedAt = detail ? (local?.startedAt ?? detail.startedAt) : null;
+  const pausedAtPersisted = local?.pausedAt ?? null;
   const pausedAccum = local?.pausedAccumulatedMs ?? 0;
   useEffect(() => {
     if (!workoutStartedAt) return;
     const tick = () => {
-      setElapsed(
-        computeElapsed(workoutStartedAt, paused ? new Date().toISOString() : null, pausedAccum),
-      );
+      setElapsed(computeElapsedSeconds(workoutStartedAt, pausedAtPersisted, pausedAccum));
     };
     tick();
     const interval = window.setInterval(tick, 1000);
     return () => window.clearInterval(interval);
-  }, [workoutStartedAt, paused, pausedAccum]);
+  }, [workoutStartedAt, pausedAtPersisted, pausedAccum]);
 
   // Rest timer — deadline based (timestamp), robust to backgrounding.
+  // Honors restPaused: while paused the interval skips the countdown so the clock freezes.
   const [restEpoch, setRestEpoch] = useState(0);
   useEffect(() => {
     if (restDeadline.current == null) return;
+    if (restPaused) return;
     const interval = window.setInterval(() => {
-      const remaining = Math.max(0, Math.round((restDeadline.current! - Date.now()) / 1000));
+      if (restDeadline.current == null) return;
+      const remaining = Math.max(0, Math.round((restDeadline.current - Date.now()) / 1000));
       setRestRemaining(remaining);
       if (remaining === 0) {
         restDeadline.current = null;
+        restPausedAt.current = null;
         window.clearInterval(interval);
       }
     }, 250);
     return () => window.clearInterval(interval);
-  }, [restEpoch]);
+  }, [restEpoch, restPaused]);
+
+  /** Toggle the session pause. Freezes `pausedAt` once, persists it so close/unmount keeps it. */
+  async function togglePause() {
+    const nowIso = new Date().toISOString();
+    const base: LocalWorkoutState | null =
+      local ??
+      (detail
+        ? {
+            workoutId,
+            serverVersion: detail.serverVersion,
+            startedAt: detail.startedAt,
+            pausedAt: null,
+            pausedAccumulatedMs: 0,
+            draftState: {},
+            status: 'local' as const,
+            updatedAt: nowIso,
+          }
+        : null);
+    if (!base) return;
+    const next = base.pausedAt ? resumeWorkoutState(base, nowIso) : pauseWorkoutState(base, nowIso);
+    await saveLocalWorkout(next);
+    setLocal(next);
+  }
+
+  /** Toggle the rest-timer pause. Shifts the deadline on resume so no time leaks while frozen. */
+  function toggleRestPause() {
+    if (restDeadline.current == null) return;
+    if (!restPaused) {
+      restPausedAt.current = Date.now();
+      setRestPaused(true);
+    } else {
+      if (restPausedAt.current != null) {
+        restDeadline.current = shiftRestDeadline(restDeadline.current, restPausedAt.current, Date.now());
+        restPausedAt.current = null;
+      }
+      setRestPaused(false);
+    }
+  }
+
+  // Persist pause on unmount/close: if the clock is frozen, the paused state is already
+  // saved via togglePause, but re-save on cleanup guards against a close mid-tick.
+  const localRef = useRef(local);
+  localRef.current = local;
+  useEffect(() => {
+    return () => {
+      const cur = localRef.current;
+      if (cur?.pausedAt) void saveLocalWorkout(cur).catch(() => {});
+    };
+  }, []);
 
   /** Push queued events; on conflict (409) surface resolution instead of overwriting. */
   const syncEvents = useCallback(async () => {
@@ -313,37 +373,60 @@ export function WorkoutPlayerPage() {
     setBusy(true);
     const key = `${ex.id}-${setIdx}`;
     const values = setValues[key] ?? { reps: '', weight: '', rpe: '' };
-    const reps = values.reps ? Number(values.reps) : 0;
+    const reps = values.reps ? Number(values.reps) : null;
     const weight = values.weight ? Number(values.weight) : null;
+    const rpe = values.rpe ? Number(values.rpe) : null;
+    // Client guard (task_0002): never send status:'partial' with all-null
+    // actuals — the finish gate needs >=1 completed set with actual > 0, and
+    // an empty row stored as 'partial' poisons it silently.
+    const hasActual = reps != null || weight != null || rpe != null;
+    if (!hasActual) {
+      setSetErrors((prev) => ({ ...prev, [key]: t('log.set_empty') }));
+      setBusy(false);
+      return;
+    }
+    setSetErrors((prev) => ({ ...prev, [key]: null }));
     try {
       await api(`/workouts/${workoutId}/sets`, {
         method: 'POST',
         body: {
           exerciseId: ex.exercise_id,
           setIndex: setIdx,
-          actualReps: reps || null,
+          actualReps: reps,
           actualWeightKg: weight,
-          actualRpe: values.rpe ? Number(values.rpe) : null,
-          status: reps > 0 ? 'completed' : 'partial',
+          actualRpe: rpe,
+          status: (reps ?? 0) > 0 || (weight ?? 0) > 0 ? 'completed' : 'partial',
           clientEventId: uuid(),
           applyTo,
         },
       });
+      setNotice(t('log.set_saved'));
       setSetValues((prev) => ({ ...prev, [key]: { reps: '', weight: values.weight, rpe: '' } }));
       const nextSet = ex.sets.find((s) => s.set_index === setIdx + 1);
       if (nextSet) startRest(nextSet.rest_seconds);
       await load();
-    } catch {
-      // Offline or failed: keep it queued locally — nothing is lost.
-      await queueAndSync('set_logged', {
-        performedExerciseId: ex.id,
-        exerciseId: ex.exercise_id,
-        setIndex: setIdx,
-        reps,
-        weightKg: weight,
-        rpe: values.rpe ? Number(values.rpe) : null,
-        status: reps > 0 ? 'completed' : 'partial',
-      });
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === 'network_error') {
+        // Genuinely offline: keep it queued locally — nothing is lost.
+        await queueAndSync('set_logged', {
+          performedExerciseId: ex.id,
+          exerciseId: ex.exercise_id,
+          setIndex: setIdx,
+          reps,
+          weightKg: weight,
+          rpe,
+          status: (reps ?? 0) > 0 || (weight ?? 0) > 0 ? 'completed' : 'partial',
+        });
+        setNotice(t('log.set_queued_offline'));
+        return;
+      }
+      // Real server errors (validation, auth, finished workout…) must be
+      // visible — never swallowed into the offline queue.
+      if (err instanceof ApiClientError && err.field === 'set_empty') {
+        setSetErrors((prev) => ({ ...prev, [key]: t('log.set_empty') }));
+      } else {
+        setError(err instanceof Error ? err.message : t('error.generic'));
+      }
     } finally {
       setBusy(false);
     }
@@ -400,14 +483,16 @@ export function WorkoutPlayerPage() {
       sessionStorage.setItem('tg_last_summary', JSON.stringify(res.summary));
       navigate('/log?finished=1');
     } catch (err) {
-      setError(
+      // Surface the real reason inline (incl. the no_executed_sets gate) and
+      // keep the review dialog open so the member can log a set first.
+      const message =
         err instanceof ApiClientError && err.field === 'no_executed_sets'
           ? t('log.no_executed_sets')
           : err instanceof Error
             ? err.message
-            : t('error.generic'),
-      );
-      setShowFinish(false);
+            : t('error.generic');
+      setError(message);
+      setNotice(message);
     } finally {
       setBusy(false);
     }
@@ -428,8 +513,9 @@ export function WorkoutPlayerPage() {
           <button
             type="button"
             className="btn-secondary !min-h-9 !px-3"
-            onClick={() => setPaused((p) => !p)}
+            onClick={() => void togglePause()}
             aria-pressed={paused}
+            data-testid="session-pause-toggle"
           >
             {paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
             {minutes}:{String(seconds).padStart(2, '0')}
@@ -527,7 +613,9 @@ export function WorkoutPlayerPage() {
             <button
               type="button"
               className="btn-secondary !min-h-9 text-sm"
-              onClick={() => setRestPaused((p) => !p)}
+              onClick={toggleRestPause}
+              data-testid="rest-pause-toggle"
+              aria-pressed={restPaused}
             >
               {restPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
             </button>
@@ -588,6 +676,12 @@ export function WorkoutPlayerPage() {
           </li>
         ))}
       </ul>
+
+      {notice && (
+        <p role="status" className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm">
+          {notice}
+        </p>
+      )}
 
       {ex && (
         <section className="card" aria-labelledby="current-exercise">
@@ -686,6 +780,15 @@ export function WorkoutPlayerPage() {
                             data-testid={`actual-${s.set_index}`}
                           >
                             ✓ {actualDone}
+                          </span>
+                        )}
+                        {setErrors[key] && (
+                          <span
+                            className="mt-1 block text-xs text-red-700"
+                            role="alert"
+                            data-testid={`set-error-${s.set_index}`}
+                          >
+                            {setErrors[key]}
                           </span>
                         )}
                       </td>

@@ -49,6 +49,24 @@ workoutActionRoutes.post('/:id/sets', async (c) => {
   const exerciseId = typeof raw?.exerciseId === 'string' ? raw.exerciseId : '';
   if (!exerciseId) throw badRequest('Missing exercise for this set.', 'exerciseId');
 
+  // Empty-save guard (task_0002): never store status:'partial' (or 'completed')
+  // with all-null actuals — such rows poison the finish gate, which needs
+  // >=1 completed set with actual_reps > 0 OR actual_weight_kg > 0.
+  const hasActual =
+    d.actualReps != null || d.actualWeightKg != null || d.actualRpe != null || d.actualRir != null;
+  if (!hasActual) {
+    throw badRequest(
+      'Enter reps, weight, RPE or RIR before saving this set — empty sets are not saved.',
+      'set_empty',
+    );
+  }
+  if (d.status === 'completed' && !((d.actualReps ?? 0) > 0 || (d.actualWeightKg ?? 0) > 0)) {
+    throw badRequest(
+      'A completed set needs reps above 0 or a weight above 0.',
+      'set_empty',
+    );
+  }
+
   const pe = await c.env.DB.prepare(
     `SELECT id FROM performed_exercises WHERE workout_id = ? AND exercise_id = ?`,
   )
