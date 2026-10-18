@@ -13,7 +13,14 @@ workoutRoutes.get('/today', async (c) => {
   if (!auth) throw unauthorized();
   const today = todayIso();
 
-  const [plan, nextSession, activeWorkout, proposals, notifications] = await Promise.all([
+  const [
+    plan,
+    nextSession,
+    activeWorkout,
+    proposals,
+    notifications,
+    onboarding,
+  ] = await Promise.all([
     c.env.DB.prepare(
       `SELECT p.id, p.status, pv.version, p.nutrition_framework
        FROM plans p JOIN plan_versions pv ON pv.id = p.current_version_id
@@ -48,6 +55,11 @@ workoutRoutes.get('/today', async (c) => {
     )
       .bind(auth.user.id)
       .first<{ n: number }>(),
+    c.env.DB.prepare(
+      `SELECT onboarding_completed_at FROM profiles WHERE user_id = ?`,
+    )
+      .bind(auth.user.id)
+      .first<{ onboarding_completed_at: string | null }>(),
   ]);
 
   let sessionDetail: Record<string, unknown> | null = null;
@@ -89,7 +101,9 @@ workoutRoutes.get('/today', async (c) => {
           }
         : plan
           ? { kind: 'view_plan', labelKey: 'today.action.view_plan' }
-          : { kind: 'start_onboarding', labelKey: 'today.action.start_onboarding' },
+          : onboarding?.onboarding_completed_at
+            ? { kind: 'generate_plan', labelKey: 'today.action.generate_plan' }
+            : { kind: 'start_onboarding', labelKey: 'today.action.start_onboarding' },
   });
 });
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, ApiClientError } from '../lib/api';
 import { useI18n } from '../i18n';
 import { useSession } from '../hooks/useSession';
 import { ErrorState, LoadingState } from '../components/ui-states';
@@ -43,6 +43,10 @@ export function AccountPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEmail, setDeleteEmail] = useState('');
+  const [passwordCurrent, setPasswordCurrent] = useState('');
+  const [passwordNew, setPasswordNew] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -126,6 +130,38 @@ export function AccountPage() {
     }
   }
 
+  async function changePassword() {
+    if (passwordNew !== passwordConfirm) {
+      setFieldError(t('error.validation'));
+      return;
+    }
+    if (passwordNew.length < 10) {
+      setFieldError(t('account.password_requirements'));
+      return;
+    }
+    setBusy(true);
+    setFieldError(null);
+    try {
+      await api('/account/password', {
+        method: 'POST',
+        body: { currentPassword: passwordCurrent, newPassword: passwordNew },
+      });
+      setPasswordCurrent('');
+      setPasswordNew('');
+      setPasswordConfirm('');
+      setFieldError(null);
+      setNotice(t('account.password_changed'));
+    } catch (err) {
+      if (err instanceof ApiClientError && err.status === 400) {
+        setFieldError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : t('error.generic'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (error && !billing) return <ErrorState message={error} onRetry={() => void load()} />;
   if (!billing || !user) return <LoadingState />;
 
@@ -195,6 +231,86 @@ export function AccountPage() {
             </select>
           </div>
         </div>
+      </section>
+
+      <section className="card" aria-labelledby="change-password-heading">
+        <h2 id="change-password-heading" className="font-semibold text-stone-900">
+          {t('account.change_password_heading')}
+        </h2>
+        <p className="mt-2 text-sm text-stone-600">{t('account.change_password')}</p>
+
+        <form
+          className="card space-y-3 mt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void changePassword();
+          }}
+        >
+          <div className="space-y-2">
+            <label className="label" htmlFor="pw-current">
+              {t('account.password_current')}
+            </label>
+            <input
+              id="pw-current"
+              type="password"
+              className="input"
+              value={passwordCurrent}
+              onChange={(e) => setPasswordCurrent(e.target.value)}
+              placeholder={t('account.password_current')}
+              autoComplete="current-password"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="label" htmlFor="pw-new">
+              {t('account.password_new')}
+            </label>
+            <input
+              id="pw-new"
+              type="password"
+              className="input"
+              value={passwordNew}
+              onChange={(e) => setPasswordNew(e.target.value)}
+              placeholder={t('account.password_new')}
+              autoComplete="new-password"
+            />
+            {fieldError && (
+              <p className="text-xs text-red-600" role="alert">
+                {fieldError}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="label" htmlFor="pw-confirm">
+              {t('account.password_confirm')}
+            </label>
+            <input
+              id="pw-confirm"
+              type="password"
+              className="input"
+              value={passwordConfirm}
+              onChange={(e) => setPasswordConfirm(e.target.value)}
+              placeholder={t('account.password_confirm')}
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div className="text-xs text-stone-500">
+            {t('account.password_requirements')}
+          </div>
+
+          <button
+            type="submit"
+            className="btn-primary mt-3"
+            disabled={
+              !passwordCurrent || !passwordNew || !passwordConfirm ||
+              passwordNew.length < 10 || passwordNew !== passwordConfirm
+            }
+          >
+            {t('action.change_password')}
+          </button>
+        </form>
       </section>
 
       <section className="card" aria-labelledby="billing-heading" data-testid="billing-section">

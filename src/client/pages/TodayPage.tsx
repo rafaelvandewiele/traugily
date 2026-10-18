@@ -147,6 +147,16 @@ export function TodayPage() {
               {t('today.action.start_onboarding')}
             </button>
           )}
+          {data.nextAction.kind === 'generate_plan' && (
+            <button
+              type="button"
+              onClick={() => navigate('/plan')}
+              className="btn-primary"
+              data-testid="generate-plan"
+            >
+              {t('today.action.generate_plan')}
+            </button>
+          )}
         </div>
       </section>
 

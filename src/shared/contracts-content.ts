@@ -90,6 +90,13 @@ export const supportAccessGrantSchema = z.object({
   ttlHours: z.number().int().min(1).max(72).default(24),
 });
 
+export const adminSubscriptionGrantSchema = z.object({
+  targetUserId: z.string(),
+  plan: z.enum(['free', 'premium']),
+  reason: z.string().min(10).max(500),
+  scope: z.array(z.string()).min(1).optional(),
+});
+
 export const consentSchema = z.object({
   consentKey: z.enum([
     'marketing_email',

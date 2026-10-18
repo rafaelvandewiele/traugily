@@ -2,7 +2,8 @@
 
 import { Hono } from 'hono';
 import type { Env, AppVariables } from '../env';
-import { consentSchema } from '../../shared/contracts';
+import { consentSchema, changePasswordSchema } from '../../shared/contracts';
+import { hashPassword, verifyPassword } from '../lib/crypto';
 import { badRequest, unauthorized } from '../lib/errors';
 import { newId, nowIso } from '../lib/ids';
 import { getAuth } from '../middleware/auth';
@@ -146,4 +147,36 @@ accountRoutes.delete('/', async (c) => {
     message:
       'Account scheduled for deletion. Operational records (such as invoices) are kept only where legally required.',
   });
+accountRoutes.post('/account/password', async (c) => {
+  const auth = getAuth(c.env, c);
+  if (!auth) throw unauthorized();
+  const body = await c.req.json().catch(() => null);
+  const parsed = changePasswordSchema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw badRequest(issue?.message ?? 'Invalid input', issue?.path.join('.'));
+  }
+  const { currentPassword, newPassword } = parsed.data;
+
+  if (!auth.user.password_hash || !(await verifyPassword(currentPassword, auth.user.password_hash))) {
+    throw badRequest('Current password is incorrect.');
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await c.env.DB.prepare(
+    `UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`,
+  )
+    .bind(passwordHash, nowIso(), auth.user.id)
+    .run();
+
+  await writeAudit(c.env.DB, {
+    actor: { userId: auth.user.id, role: 'member' },
+    action: 'password_changed',
+    targetType: 'user',
+    targetId: auth.user.id,
+    afterState: { changedAt: nowIso() },
+  });
+
+  return c.json({ ok: true });
+});
 });

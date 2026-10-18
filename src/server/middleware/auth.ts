@@ -25,6 +25,7 @@ export type UserRow = {
   is_admin: number;
   is_support: number;
   status: string;
+  password_hash: string | null;
 };
 
 export type AuthContext = {
@@ -52,7 +53,7 @@ export const optionalAuth = createMiddleware<{ Bindings: Env; Variables: AppVari
       const tokenHash = await sha256Hex(token);
       const row = await c.env.DB.prepare(
         `SELECT s.id AS session_id, s.user_id AS owner_id, s.csrf_token, s.expires_at, s.revoked_at,
-                u.email, u.email_verified_at, u.locale, u.unit_system, u.timezone,
+                u.email, u.email_verified_at, u.locale, u.unit_system, u.timezone, u.password_hash,
                 u.is_admin, u.is_support, u.status
          FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = ?`,
@@ -72,6 +73,7 @@ export const optionalAuth = createMiddleware<{ Bindings: Env; Variables: AppVari
           is_admin: number;
           is_support: number;
           status: string;
+          password_hash: string | null;
         }>();
       if (row && !row.revoked_at && row.expires_at > nowIso() && row.status === 'active') {
         const session: SessionRow = {
@@ -91,6 +93,7 @@ export const optionalAuth = createMiddleware<{ Bindings: Env; Variables: AppVari
           is_admin: row.is_admin,
           is_support: row.is_support,
           status: row.status,
+          password_hash: row.password_hash,
         };
         setAuth(c.env, c, { session, user });
         c.set('userId', row.owner_id);

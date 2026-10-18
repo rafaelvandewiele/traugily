@@ -7,7 +7,10 @@ import { newId, nowIso } from '../lib/ids';
 import { getAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/rbac';
 import { writeAudit } from '../lib/audit';
-import { supportAccessGrantSchema } from '../../shared/contracts';
+import {
+  adminSubscriptionGrantSchema,
+  supportAccessGrantSchema,
+} from '../../shared/contracts';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -210,6 +213,60 @@ adminRoutes.post('/members/:id/support-grant', async (c) => {
     requestId: c.get('requestId'),
   });
   return c.json({ ok: true, grantId, expiresAt });
+});
+
+adminRoutes.post('/members/:id/entitlement', async (c) => {
+  const auth = getAuth(c.env, c);
+  if (!auth) throw unauthorized();
+  const userId = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  const parsed = adminSubscriptionGrantSchema.safeParse(body);
+  if (!parsed.success) throw badRequest('plan and reason are required.');
+  const d = parsed.data;
+  if (d.targetUserId !== userId) throw badRequest('Target user mismatch.');
+
+  const target = await c.env.DB.prepare(`SELECT id FROM users WHERE id = ?`)
+    .bind(userId)
+    .first<{ id: string }>();
+  if (!target) throw notFound('Member not found.');
+
+  const now = nowIso();
+  const entitlementStatus = d.plan === 'premium' ? 'active' : 'free';
+
+  // Promote the local entitlement immediately so the app stops 403-ing the
+  // member, then let Stripe webhooks reconcile and bill the subscription.
+  await c.env.DB.prepare(
+    `INSERT INTO entitlements (id, user_id, plan, status, source, valid_until, updated_at)
+     VALUES (?, ?, ?, ?, 'admin_grant', NULL, ?)
+     ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, status = excluded.status,
+       source = excluded.source, valid_until = excluded.valid_until, updated_at = excluded.updated_at`,
+  )
+    .bind(newId('ent'), userId, d.plan, now, now)
+    .run();
+
+  // Keep the local billing view coherent (no real Stripe id for a manual grant).
+  await c.env.DB.prepare(
+    `INSERT INTO subscriptions (id, user_id, stripe_subscription_id, status, currency,
+       current_period_end, cancel_at_period_end, canceled_at, created_at, updated_at)
+     VALUES (?, ?, NULL, ?, 'eur', NULL, 0, NULL, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET status = excluded.status,
+       current_period_end = excluded.current_period_end,
+       cancel_at_period_end = excluded.cancel_at_period_end,
+       canceled_at = excluded.canceled_at, updated_at = excluded.updated_at`,
+  )
+    .bind(newId('sub'), userId, entitlementStatus, now, now)
+    .run();
+
+  await writeAudit(c.env.DB, {
+    actor: { userId: auth.user.id, role: auth.user.is_admin ? 'admin' : 'support' },
+    action: 'admin_subscription_granted',
+    targetType: 'user',
+    targetId: userId,
+    afterState: { plan: d.plan, status: entitlementStatus },
+    requestId: c.get('requestId'),
+  });
+
+  return c.json({ ok: true, plan: d.plan, status: entitlementStatus });
 });
 
 adminRoutes.post('/members/:id/support-grant/:grantId/revoke', async (c) => {

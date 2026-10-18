@@ -20,6 +20,7 @@ export const en = {
   'action.retry': 'Try again',
   'action.back': 'Back',
   'action.next': 'Next',
+  'action.change_password': 'Change password',
   'action.skip': 'Skip for now',
   'action.sign_in': 'Sign in',
   'action.sign_up': 'Create account',
@@ -61,6 +62,7 @@ export const en = {
   'today.action.resume_workout': 'Resume your workout',
   'today.action.view_plan': 'View your plan',
   'today.action.start_onboarding': 'Finish setup',
+  'today.action.generate_plan': 'Generate your plan',
   'today.plan_summary': 'Week goal: {sessions} sessions · {minutes} min each',
 
   'plan.title': 'Your plan',
@@ -201,6 +203,17 @@ export const en = {
   'account.marketing_consent': 'Send me product news and offers',
   'account.photo_consent': 'Allow progress photo uploads',
   'account.ai_consent': 'Allow AI-drafted explanations for my plan (never diagnoses)',
+
+  'account.change_password': 'Change password',
+  'account.change_password_heading': 'Change password',
+  'account.password_current': 'Current password',
+  'account.password_new': 'New password',
+  'account.password_confirm': 'Confirm new password',
+  'account.password_requirements': 'At least 10 characters, with upper, lower and number.',
+
+  'account.password_changed': 'Password updated.',
+
+  'account.error.old_password_incorrect': 'Current password is incorrect.',
 
   'billing.checkout_success':
     'Thanks! Your subscription activates once Stripe confirms the payment.',
