@@ -121,7 +121,7 @@ export function PlanPage() {
         <button
           type="button"
           className="btn-primary mt-4"
-          disabled={busy || !ackChecked}
+          disabled={busy}
           onClick={() => void generatePlan()}
           data-testid="generate-plan"
         >

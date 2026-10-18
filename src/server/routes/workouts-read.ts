@@ -10,12 +10,17 @@ export const workoutReadRoutes = new Hono<{ Bindings: Env; Variables: AppVariabl
 workoutReadRoutes.get('/history', async (c) => {
   const auth = getAuth(c.env, c);
   if (!auth) throw unauthorized();
+  // Duration is computed inline on purpose: a scalar subquery of the form
+  // `(SELECT COALESCE(SUM(julianday(...) - julianday(...)), 0) ...)` makes D1
+  // return a phantom all-NULL row when the outer query matches nothing, which
+  // crashed the Log page while rendering (null.started_at.slice). Plain
+  // COUNT-style scalar subqueries are safe and verified not to do this.
   const rows = await c.env.DB.prepare(
     `SELECT w.id, w.started_at, w.ended_at, w.state,
-            (SELECT COALESCE(SUM((julianday(w.ended_at) - julianday(w.started_at)) * 86400), 0)
-             FROM workout_executions WHERE id = w.id) AS duration_seconds,
+            COALESCE(CAST((julianday(w.ended_at) - julianday(w.started_at)) * 86400 AS INTEGER), 0)
+              AS duration_seconds,
             (SELECT COUNT(*) FROM set_logs s
-             WHERE s.workout_id = w.id AND s.status = 'completed') AS executed_sets
+              WHERE s.workout_id = w.id AND s.status = 'completed') AS executed_sets
      FROM workout_executions w
      WHERE w.user_id = ? AND w.state = 'completed'
      ORDER BY w.started_at DESC LIMIT 100`,

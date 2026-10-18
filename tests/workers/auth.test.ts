@@ -98,4 +98,47 @@ describe('auth flow', () => {
     expect(logged).toBeTruthy();
     expect(logged?.detail).toContain('evil.example');
   });
+
+  it('changes the account password: wrong current rejected, new password works', async () => {
+    const { cookies, csrf } = await signupAndCookies('pw-change@workers.test');
+
+    // Regression: this used to 404 ("This endpoint does not exist.") because
+    // the route was registered as /account/password inside the /account mount.
+    const wrongCurrent = await json<{ error: { code: string } }>(
+      '/account/password',
+      post(
+        '/account/password',
+        { currentPassword: 'Wrong1234x', newPassword: 'Nieuw1234x' },
+        csrf,
+        cookies,
+      ),
+    );
+    expect(wrongCurrent.status).toBe(400);
+    expect(wrongCurrent.body.error.code).toBe('bad_request');
+
+    const change = await json<{ ok: boolean }>(
+      '/account/password',
+      post(
+        '/account/password',
+        { currentPassword: 'Testing1234', newPassword: 'Nieuw1234x' },
+        csrf,
+        cookies,
+      ),
+    );
+    expect(change.status).toBe(200);
+    expect(change.body.ok).toBe(true);
+
+    // Old password must no longer work…
+    const oldLogin = await json<{ error: { code: string } }>('/auth/login', {
+      ...post('/auth/login', { email: 'pw-change@workers.test', password: 'Testing1234' }),
+    });
+    expect(oldLogin.status).toBe(401);
+
+    // …and the new one must.
+    const newLogin = await json<{ user: { email: string } }>('/auth/login', {
+      ...post('/auth/login', { email: 'pw-change@workers.test', password: 'Nieuw1234x' }),
+    });
+    expect(newLogin.status).toBe(200);
+    expect(newLogin.body.user.email).toBe('pw-change@workers.test');
+  });
 });

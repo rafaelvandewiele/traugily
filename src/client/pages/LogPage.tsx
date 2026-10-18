@@ -25,7 +25,13 @@ export function LogPage() {
   const load = useCallback(async () => {
     try {
       const res = await api<{ workouts: HistoryItem[] }>('/workouts/history');
-      setItems(res.workouts);
+      // Defensive: never render malformed rows — a null row would crash the
+      // whole list (and with it the page), showing the user a blank screen.
+      setItems(
+        (res.workouts ?? []).filter(
+          (w): w is HistoryItem => !!w && typeof w.id === 'string' && typeof w.started_at === 'string',
+        ),
+      );
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.generic'));
@@ -36,7 +42,11 @@ export function LogPage() {
     void load();
     const raw = sessionStorage.getItem('tg_last_summary');
     if (raw && params.get('finished')) {
-      setSummary(JSON.parse(raw) as Record<string, number | string>);
+      try {
+        setSummary(JSON.parse(raw) as Record<string, number | string>);
+      } catch {
+        // Corrupt cached summary — drop it instead of blanking the page.
+      }
       sessionStorage.removeItem('tg_last_summary');
     }
   }, [load, params]);

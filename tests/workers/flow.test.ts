@@ -1,6 +1,6 @@
 /** Integration tests: onboarding flow, workout lifecycle, safety evaluation. */
 
-import { SELF } from 'cloudflare:test';
+import { env, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { json, post, signupAndCookies, completeOnboarding } from './helpers';
 
@@ -96,5 +96,47 @@ describe('onboarding flow', () => {
     expect(report.status).toBe(200);
     expect(report.body.evaluation.severity).toBe('advisory');
     expect(report.body.evaluation.stopTraining).toBe(false);
+  });
+});
+
+describe('workout history', () => {
+  it('returns an empty list — never a phantom null row — for users without workouts', async () => {
+    const { cookies } = await signupAndCookies('history-empty@workers.test');
+    const res = await json<{ workouts: Array<{ id: string | null; started_at: string | null }> }>(
+      '/workouts/history',
+      { headers: { cookie: cookies } },
+    );
+    expect(res.status).toBe(200);
+    // The bug that blanked the Log page: D1 returned one all-NULL row here.
+    expect(res.body.workouts).toEqual([]);
+  });
+
+  it('returns completed workouts with duration and set count', async () => {
+    const { cookies } = await signupAndCookies('history-full@workers.test');
+    const me = await json<{ user: { id: string } }>('/auth/me', { headers: { cookie: cookies } });
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO workout_executions (id, user_id, client_workout_id, state, started_at, ended_at, created_at, updated_at)
+       VALUES ('wrk_hist_test', ?, 'cf-hist-test', 'completed',
+               '2026-10-01T10:00:00.000Z', '2026-10-01T10:30:00.000Z', ?, ?)`,
+    )
+      .bind(me.body.user.id, now, now)
+      .run();
+
+    const res = await json<{
+      workouts: Array<{
+        id: string;
+        started_at: string;
+        duration_seconds: number;
+        executed_sets: number;
+      }>;
+    }>('/workouts/history', { headers: { cookie: cookies } });
+    expect(res.status).toBe(200);
+    expect(res.body.workouts).toHaveLength(1);
+    const w = res.body.workouts[0];
+    expect(w.id).toBe('wrk_hist_test');
+    expect(w.started_at).toBe('2026-10-01T10:00:00.000Z');
+    expect(w.duration_seconds).toBe(1800);
+    expect(w.executed_sets).toBe(0);
   });
 });

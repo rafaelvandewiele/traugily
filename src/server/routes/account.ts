@@ -147,7 +147,7 @@ accountRoutes.delete('/', async (c) => {
     message:
       'Account scheduled for deletion. Operational records (such as invoices) are kept only where legally required.',
   });
-accountRoutes.post('/account/password', async (c) => {
+accountRoutes.post('/password', async (c) => {
   const auth = getAuth(c.env, c);
   if (!auth) throw unauthorized();
   const body = await c.req.json().catch(() => null);
