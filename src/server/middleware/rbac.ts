@@ -4,6 +4,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Env, AppVariables } from '../env';
 import { getAuth } from './auth';
 import { forbidden } from '../lib/errors';
+import { recordOperationalEvent } from '../lib/audit';
 
 export const requireAdmin = createMiddleware<{ Bindings: Env; Variables: AppVariables }>(
   async (c, next) => {
@@ -25,7 +26,9 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
  * CSRF: state-changing requests must echo the readable tg_csrf cookie in the
- * X-CSRF-Token header, and the Origin header (when present) must match APP_URL.
+ * X-CSRF-Token header, and the Origin header (when present) must match APP_URL
+ * or the host actually serving this request (first-party: custom domains,
+ * preview URLs, local dev). Cross-site callers can never match either.
  */
 export const csrfProtection = createMiddleware<{ Bindings: Env; Variables: AppVariables }>(
   async (c, next) => {
@@ -51,7 +54,20 @@ export const csrfProtection = createMiddleware<{ Bindings: Env; Variables: AppVa
       );
     }
     const origin = c.req.header('origin');
-    if (origin && origin !== c.env.APP_URL && !isAllowedOrigin(origin, c.env.APP_URL)) {
+    if (origin && !isAllowedOrigin(origin, c.env.APP_URL, c.req.header('host'))) {
+      // Record why we rejected (origin + hostnames only) so mismatched
+      // deployments are diagnosable from the ops console.
+      await recordOperationalEvent(c.env.DB, {
+        kind: 'origin_mismatch',
+        severity: 'warning',
+        subject: c.req.path,
+        detail: {
+          origin: origin.slice(0, 120),
+          requestHost: c.req.header('host') ?? null,
+          appUrl: c.env.APP_URL,
+        },
+        requestId: c.get('requestId') ?? null,
+      }).catch(() => undefined);
       return c.json(
         {
           error: {
@@ -73,12 +89,15 @@ function timingSafeEqualTokens(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function isAllowedOrigin(origin: string, appUrl: string): boolean {
-  // Workers preview URLs (*.workers.dev) share the app origin family in dev tooling.
+function isAllowedOrigin(origin: string, appUrl: string, requestHost?: string): boolean {
   try {
     const o = new URL(origin);
     const a = new URL(appUrl);
     if (o.hostname === a.hostname) return true;
+    // First-party: the app is being served from this very host (custom domains
+    // bound to the worker, workers.dev previews, and local dev tooling).
+    // A cross-site page (evil.example → Host: app) can never match it.
+    if (requestHost && o.host.toLowerCase() === requestHost.toLowerCase()) return true;
     // Local development: `localhost` and `127.0.0.1` address the same
     // machine, and tooling (Playwright, curl) may use either. Only when
     // APP_URL itself is a loopback host — never in production.

@@ -18,10 +18,18 @@ billingRoutes.get('/status', async (c) => {
   if (!auth) throw unauthorized();
   const [entitlement, sub, customer, invoices] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT plan, status, valid_until, updated_at FROM entitlements WHERE user_id = ?`,
+      `SELECT e.plan, e.status, e.valid_until, e.updated_at, u.is_admin
+         FROM users u LEFT JOIN entitlements e ON e.user_id = u.id
+        WHERE u.id = ?`,
     )
       .bind(auth.user.id)
-      .first(),
+      .first<{
+        plan: string | null;
+        status: string | null;
+        valid_until: string | null;
+        updated_at: string | null;
+        is_admin: number;
+      }>(),
     c.env.DB.prepare(
       `SELECT stripe_subscription_id, status, price_id, currency, current_period_end,
               cancel_at_period_end, canceled_at, trial_end
@@ -50,8 +58,14 @@ billingRoutes.get('/status', async (c) => {
       .all(),
   ]);
 
+  // Admins always hold premium, whatever the stored row says (code-enforced).
+  const effectiveEntitlement =
+    entitlement?.is_admin === 1
+      ? { ...entitlement, plan: 'premium', status: 'active', valid_until: null }
+      : entitlement;
+
   return c.json({
-    entitlement,
+    entitlement: effectiveEntitlement,
     subscription: sub
       ? {
           status: sub.status,

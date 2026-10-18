@@ -285,6 +285,8 @@ export const en = {
   'admin.audit': 'Audit log',
   'admin.rules': 'Rules & prompts',
   'admin.no_access': 'You do not have access to this area.',
+  'admin.grant_premium': 'Grant premium',
+  'admin.revoke_to_free': 'Move to free',
 
   'planner.conflict.blocked_date': 'That date is marked as unavailable.',
   'planner.conflict.no_rest_between': 'That would leave no rest day between sessions.',

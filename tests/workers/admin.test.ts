@@ -61,3 +61,137 @@ describe('admin RBAC', () => {
     ).run();
   });
 });
+
+describe('admin subscription management', () => {
+  it('denies members the ability to change any subscription, including their own', async () => {
+    const { cookies, csrf } = await signupAndCookies('sub-member@workers.test');
+    const me = await json<{ user: { id: string } }>('/auth/me', {
+      headers: { cookie: cookies },
+    });
+    const userId = me.body.user.id;
+
+    const res = await json<{ error: { code: string } }>(
+      `/admin/members/${userId}/entitlement`,
+      post(
+        `/admin/members/${userId}/entitlement`,
+        { targetUserId: userId, plan: 'premium', reason: 'member tried to self-upgrade' },
+        csrf,
+        cookies,
+      ),
+    );
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('forbidden');
+
+    // Entitlement untouched.
+    const ent = await env.DB.prepare(`SELECT plan FROM entitlements WHERE user_id = ?`)
+      .bind(userId)
+      .first<{ plan: string }>();
+    expect(ent?.plan).toBe('free');
+  });
+
+  it('lets admins grant and revoke premium with an audit trail the member then sees', async () => {
+    const member = await signupAndCookies('sub-target@workers.test');
+    const admin = await signupAndCookies('sub-granter@workers.test');
+    await env.DB.prepare(
+      `UPDATE users SET is_admin = 1 WHERE email = 'sub-granter@workers.test'`,
+    ).run();
+    const me = await json<{ user: { id: string } }>('/auth/me', {
+      headers: { cookie: member.cookies },
+    });
+    const targetId = me.body.user.id;
+
+    const grant = await json<{ ok: boolean; plan: string; status: string }>(
+      `/admin/members/${targetId}/entitlement`,
+      post(
+        `/admin/members/${targetId}/entitlement`,
+        {
+          targetUserId: targetId,
+          plan: 'premium',
+          reason: 'comp granted via support ticket 1',
+        },
+        admin.csrf,
+        admin.cookies,
+      ),
+    );
+    expect(grant.status).toBe(200);
+    expect(grant.body.plan).toBe('premium');
+
+    const ent = await env.DB.prepare(
+      `SELECT plan, status, source FROM entitlements WHERE user_id = ?`,
+    )
+      .bind(targetId)
+      .first<{ plan: string; status: string; source: string }>();
+    expect(ent?.plan).toBe('premium');
+    expect(ent?.status).toBe('active');
+    expect(ent?.source).toBe('admin_grant');
+
+    const audit = await env.DB.prepare(
+      `SELECT actor_role FROM audit_logs
+       WHERE action = 'admin_subscription_granted' AND target_id = ?
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+      .bind(targetId)
+      .first<{ actor_role: string }>();
+    expect(audit).toBeTruthy();
+    expect(audit?.actor_role).toBe('admin');
+
+    // The member's session now reports premium (no re-login required).
+    const after = await json<{ user: { entitlement: { plan: string } } }>('/auth/me', {
+      headers: { cookie: member.cookies },
+    });
+    expect(after.body.user.entitlement.plan).toBe('premium');
+
+    // Revoke back to free.
+    const revoke = await json<{ ok: boolean }>(
+      `/admin/members/${targetId}/entitlement`,
+      post(
+        `/admin/members/${targetId}/entitlement`,
+        {
+          targetUserId: targetId,
+          plan: 'free',
+          reason: 'end of goodwill subscription period',
+        },
+        admin.csrf,
+        admin.cookies,
+      ),
+    );
+    expect(revoke.status).toBe(200);
+    const ent2 = await env.DB.prepare(`SELECT plan FROM entitlements WHERE user_id = ?`)
+      .bind(targetId)
+      .first<{ plan: string }>();
+    expect(ent2?.plan).toBe('free');
+    const session = await json<{ user: { entitlement: { plan: string } } }>('/auth/me', {
+      headers: { cookie: member.cookies },
+    });
+    expect(session.body.user.entitlement.plan).toBe('free');
+  });
+
+  it('always reports premium for admins, whatever the entitlements row says', async () => {
+    const admin = await signupAndCookies('sub-admin@workers.test');
+    const me = await json<{ user: { id: string } }>('/auth/me', {
+      headers: { cookie: admin.cookies },
+    });
+    const adminId = me.body.user.id;
+    await env.DB.prepare(`UPDATE users SET is_admin = 1 WHERE id = ?`).bind(adminId).run();
+    // Simulate a downgrade (delinquency cancel) that must not stick for admins.
+    await env.DB.prepare(
+      `UPDATE entitlements SET plan = 'free', status = 'canceled', source = 'delinquency_cancel'
+       WHERE user_id = ?`,
+    )
+      .bind(adminId)
+      .run();
+
+    const session = await json<{
+      user: { entitlement: { plan: string; status: string } };
+    }>('/auth/me', { headers: { cookie: admin.cookies } });
+    expect(session.body.user.entitlement.plan).toBe('premium');
+    expect(session.body.user.entitlement.status).toBe('active');
+
+    const billing = await json<{ entitlement: { plan: string; status: string } }>(
+      '/billing/status',
+      { headers: { cookie: admin.cookies } },
+    );
+    expect(billing.body.entitlement.plan).toBe('premium');
+    expect(billing.body.entitlement.status).toBe('active');
+  });
+});

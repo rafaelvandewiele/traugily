@@ -153,6 +153,8 @@ export const fr: Partial<Record<keyof EnDictionary, string>> = {
     'Je comprends qu’il ne s’agit pas d’un service médical et que je consulterai un professionnel en cas de douleur.',
   'admin.title': 'Admin',
   'admin.no_access': 'Vous n’avez pas accès à cette zone.',
+  'admin.grant_premium': 'Accorder Premium',
+  'admin.revoke_to_free': 'Passer en gratuit',
   'error.network': 'Impossible de joindre le serveur. Vos modifications locales sont en sécurité.',
   'error.validation': 'Veuillez vérifier les champs signalés.',
   'error.permission': 'Vous n’avez pas la permission pour cette action.',

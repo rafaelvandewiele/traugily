@@ -75,11 +75,15 @@ adminRoutes.get('/operational-events', async (c) => {
 
 adminRoutes.get('/members', async (c) => {
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
+  // Effective plan: admins always show premium (code-enforced elsewhere too),
+  // everyone else reflects their stored entitlement.
+  const base = `SELECT u.id, u.email, u.status, u.locale, u.is_admin, u.is_support, u.created_at,
+       CASE WHEN u.is_admin = 1 THEN 'premium' ELSE COALESCE(e.plan, 'free') END AS plan,
+       CASE WHEN u.is_admin = 1 THEN 'active' ELSE COALESCE(e.status, 'free') END AS plan_status
+    FROM users u LEFT JOIN entitlements e ON e.user_id = u.id`;
   const sql = q
-    ? `SELECT id, email, status, locale, is_admin, is_support, created_at FROM users
-       WHERE email_normalized LIKE ? ORDER BY created_at DESC LIMIT 50`
-    : `SELECT id, email, status, locale, is_admin, is_support, created_at FROM users
-       ORDER BY created_at DESC LIMIT 50`;
+    ? `${base} WHERE u.email_normalized LIKE ? ORDER BY u.created_at DESC LIMIT 50`
+    : `${base} ORDER BY u.created_at DESC LIMIT 50`;
   const rows = await c.env.DB.prepare(sql)
     .bind(...(q ? [`%${q}%`] : []))
     .all();
@@ -234,28 +238,31 @@ adminRoutes.post('/members/:id/entitlement', async (c) => {
   const entitlementStatus = d.plan === 'premium' ? 'active' : 'free';
 
   // Promote the local entitlement immediately so the app stops 403-ing the
-  // member, then let Stripe webhooks reconcile and bill the subscription.
-  await c.env.DB.prepare(
-    `INSERT INTO entitlements (id, user_id, plan, status, source, valid_until, updated_at)
-     VALUES (?, ?, ?, ?, 'admin_grant', NULL, ?)
-     ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, status = excluded.status,
-       source = excluded.source, valid_until = excluded.valid_until, updated_at = excluded.updated_at`,
-  )
-    .bind(newId('ent'), userId, d.plan, now, now)
-    .run();
-
-  // Keep the local billing view coherent (no real Stripe id for a manual grant).
-  await c.env.DB.prepare(
-    `INSERT INTO subscriptions (id, user_id, stripe_subscription_id, status, currency,
-       current_period_end, cancel_at_period_end, canceled_at, created_at, updated_at)
-     VALUES (?, ?, NULL, ?, 'eur', NULL, 0, NULL, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET status = excluded.status,
-       current_period_end = excluded.current_period_end,
-       cancel_at_period_end = excluded.cancel_at_period_end,
-       canceled_at = excluded.canceled_at, updated_at = excluded.updated_at`,
-  )
-    .bind(newId('sub'), userId, entitlementStatus, now, now)
-    .run();
+  // member. The `subscriptions` table mirrors Stripe only — manual grants
+  // never fabricate billing rows. On a premium grant, also neutralise any
+  // pending delinquency auto-cancel so the grant cannot be flipped back.
+  const statements = [
+    c.env.DB.prepare(
+      `INSERT INTO entitlements (user_id, plan, status, source, valid_until, updated_at)
+       VALUES (?, ?, ?, 'admin_grant', NULL, ?)
+       ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, status = excluded.status,
+         source = excluded.source, valid_until = excluded.valid_until,
+         updated_at = excluded.updated_at`,
+    ).bind(userId, d.plan, entitlementStatus, now),
+  ];
+  if (d.plan === 'premium') {
+    statements.push(
+      c.env.DB.prepare(
+        `UPDATE billing_cancellation_jobs SET status = 'skipped'
+         WHERE user_id = ? AND status = 'pending'`,
+      ).bind(userId),
+      c.env.DB.prepare(
+        `UPDATE billing_reminders SET delivery_status = 'skipped'
+         WHERE user_id = ? AND delivery_status = 'pending'`,
+      ).bind(userId),
+    );
+  }
+  await c.env.DB.batch(statements);
 
   await writeAudit(c.env.DB, {
     actor: { userId: auth.user.id, role: auth.user.is_admin ? 'admin' : 'support' },

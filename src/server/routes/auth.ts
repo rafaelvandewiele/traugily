@@ -404,10 +404,22 @@ authRoutes.get('/me', async (c) => {
 
 async function loadEntitlement(env: Env, userId: string) {
   const row = await env.DB.prepare(
-    `SELECT plan, status, valid_until FROM entitlements WHERE user_id = ?`,
+    `SELECT e.plan, e.status, e.valid_until, u.is_admin
+       FROM users u LEFT JOIN entitlements e ON e.user_id = u.id
+      WHERE u.id = ?`,
   )
     .bind(userId)
-    .first<{ plan: 'free' | 'premium'; status: string; valid_until: string | null }>();
+    .first<{
+      plan: 'free' | 'premium' | null;
+      status: string | null;
+      valid_until: string | null;
+      is_admin: number;
+    }>();
+  // Admins always run with premium, no matter what the billing row or any
+  // cron/webhook state says. This is code-enforced, not a stored grant.
+  if (row?.is_admin) {
+    return { plan: 'premium', status: 'active', validUntil: null };
+  }
   return {
     plan: row?.plan ?? 'free',
     status: (row?.status ?? 'free') as

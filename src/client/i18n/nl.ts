@@ -152,6 +152,8 @@ export const nl: Partial<Record<keyof EnDictionary, string>> = {
     'Ik begrijp dat Traugily geen medische dienst is en professionele hulp zoek bij pijn of blessures.',
   'admin.title': 'Beheer',
   'admin.no_access': 'Je hebt geen toegang tot dit gebied.',
+  'admin.grant_premium': 'Premium toekennen',
+  'admin.revoke_to_free': 'Naar gratis zetten',
   'error.network': 'We konden de server niet bereiken. Je lokale wijzigingen zijn veilig.',
   'error.validation': 'Controleer de gemarkeerde velden.',
   'error.permission': 'Je hebt geen toestemming voor deze actie.',

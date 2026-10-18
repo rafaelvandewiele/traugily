@@ -152,6 +152,8 @@ export const de: Partial<Record<keyof EnDictionary, string>> = {
     'Mir ist klar, dass Traugily kein medizinischer Dienst ist, und ich suche bei Schmerzen professionelle Hilfe.',
   'admin.title': 'Admin',
   'admin.no_access': 'Sie haben keinen Zugriff auf diesen Bereich.',
+  'admin.grant_premium': 'Premium gewähren',
+  'admin.revoke_to_free': 'Auf kostenlos umstellen',
   'error.network': 'Server nicht erreichbar. Ihre lokalen Änderungen sind sicher.',
   'error.validation': 'Bitte prüfen Sie die markierten Felder.',
   'error.permission': 'Sie haben keine Berechtigung für diese Aktion.',

@@ -21,6 +21,8 @@ type Member = {
   is_admin: number;
   is_support: number;
   created_at: string;
+  plan: string;
+  plan_status: string;
 };
 
 type Flag = { key: string; description: string; enabled: number };
@@ -90,6 +92,25 @@ export function AdminPage() {
   async function setReview(exerciseId: string, action: string) {
     try {
       await api(`/admin/exercises/${exerciseId}/review`, { method: 'POST', body: { action } });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error.generic'));
+    }
+  }
+
+  async function changeSubscription(userId: string, plan: 'premium' | 'free') {
+    try {
+      await api(`/admin/members/${userId}/entitlement`, {
+        method: 'POST',
+        body: {
+          targetUserId: userId,
+          plan,
+          reason:
+            plan === 'premium'
+              ? 'Premium granted from the admin dashboard'
+              : 'Subscription moved to free from the admin dashboard',
+        },
+      });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error.generic'));
@@ -247,7 +268,7 @@ export function AdminPage() {
                     joined {formatDate(m.created_at.slice(0, 10))}
                   </p>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap items-center gap-1">
                   {m.is_admin ? (
                     <span className="badge bg-brand-100 text-brand-900">admin</span>
                   ) : null}
@@ -255,6 +276,38 @@ export function AdminPage() {
                     <span className="badge bg-stone-100 text-stone-700">support</span>
                   ) : null}
                   <span className="badge bg-stone-100 text-stone-700">{m.status}</span>
+                  <span
+                    className={`badge ${
+                      m.plan === 'premium'
+                        ? 'bg-emerald-100 text-emerald-900'
+                        : 'bg-stone-100 text-stone-700'
+                    }`}
+                    data-testid={`member-plan-${m.id}`}
+                  >
+                    {m.plan}
+                  </span>
+                  {/* Admins always hold premium — nothing to change there.
+                      Everyone else: audited, admin-only subscription control. */}
+                  {!m.is_admin &&
+                    (m.plan === 'premium' ? (
+                      <button
+                        type="button"
+                        className="btn-secondary !min-h-8 !px-2 text-xs"
+                        onClick={() => void changeSubscription(m.id, 'free')}
+                        data-testid={`member-to-free-${m.id}`}
+                      >
+                        {t('admin.revoke_to_free')}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-secondary !min-h-8 !px-2 text-xs"
+                        onClick={() => void changeSubscription(m.id, 'premium')}
+                        data-testid={`member-grant-premium-${m.id}`}
+                      >
+                        {t('admin.grant_premium')}
+                      </button>
+                    ))}
                 </div>
               </li>
             ))}

@@ -1,6 +1,6 @@
 /** Integration tests: auth, RBAC enforcement. */
 
-import { SELF } from 'cloudflare:test';
+import { env, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { json, post, signupAndCookies } from './helpers';
 
@@ -50,5 +50,52 @@ describe('auth flow', () => {
       body: JSON.stringify({ consentKey: 'marketing_email', granted: true, version: '2026-01' }),
     });
     expect(res.status).toBe(403);
+  });
+
+  it('accepts first-party origins matching the serving host, rejects cross-site ones', async () => {
+    const { cookies, csrf } = await signupAndCookies('origin-check@workers.test');
+    const body = JSON.stringify({
+      consentKey: 'marketing_email',
+      granted: true,
+      version: '2026-01',
+    });
+
+    // First-party: Origin matches the Host serving this request (tests point
+    // APP_URL at the workers.dev deployment, so this exercises the Host rule
+    // that fixes "Request origin not allowed" for real browsing origins).
+    const firstParty = await SELF.fetch('http://localhost/api/v1/account/consents', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        cookie: cookies,
+        'x-csrf-token': csrf,
+        origin: 'http://localhost',
+      },
+      body,
+    });
+    expect(firstParty.status).toBe(200);
+
+    // Cross-site: Origin matches neither APP_URL nor the request host.
+    const crossSite = await SELF.fetch('http://localhost/api/v1/account/consents', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        cookie: cookies,
+        'x-csrf-token': csrf,
+        origin: 'https://evil.example',
+      },
+      body,
+    });
+    expect(crossSite.status).toBe(403);
+    const payload = (await crossSite.json()) as { error: { code: string } };
+    expect(payload.error.code).toBe('origin_mismatch');
+
+    // Rejections are recorded for diagnosis (origin + hosts only).
+    const logged = await env.DB.prepare(
+      `SELECT detail FROM operational_events WHERE kind = 'origin_mismatch'
+       ORDER BY created_at DESC LIMIT 1`,
+    ).first<{ detail: string }>();
+    expect(logged).toBeTruthy();
+    expect(logged?.detail).toContain('evil.example');
   });
 });
