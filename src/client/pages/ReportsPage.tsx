@@ -33,6 +33,39 @@ function defaultPeriod(): { start: string; end: string } {
   return { start: first.toISOString().slice(0, 10), end };
 }
 
+/**
+ * Download via fetch+blob instead of a bare <a href> navigation: a plain link
+ * navigations can land on the SPA shell (redirecting to /today) when the
+ * response is not a file. Fetch lets us verify the response IS a PDF and
+ * surface a real error otherwise.
+ */
+async function downloadReportFile(exportId: string): Promise<void> {
+  const res = await fetch(`/api/v1/reports/${exportId}/download`, {
+    credentials: 'same-origin',
+    headers: { accept: 'application/pdf' },
+  });
+  const contentType = res.headers.get('content-type') ?? '';
+  if (!res.ok || !contentType.includes('application/pdf')) {
+    const body = res.headers.get('content-type')?.includes('application/json')
+      ? await res.json().catch(() => null)
+      : null;
+    throw new ApiClientError(
+      res.status,
+      body?.error?.code ?? 'download_failed',
+      body?.error?.message ?? 'The report file is not available yet. Check its status and retry.',
+    );
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `traugily-report-${exportId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function ReportsPage() {
   const { t, locale } = useI18n();
   const [period, setPeriod] = useState(defaultPeriod);
@@ -153,7 +186,8 @@ export function ReportsPage() {
             <p className="font-medium text-stone-900">{t(('reports.status.' + trackedStatus.status) as 'reports.status.pending')}</p>
             {trackedStatus.status === 'failed' && <p className="mt-1 text-red-800" role="alert">{trackedStatus.error_message ?? t('error.generic')}</p>}
             {trackedStatus.status === 'ready' ? (
-              <a className="btn-secondary mt-2 inline-flex" href={`/api/v1/reports/${trackedId}/download`} data-testid="reports-download">{t('reports.download')}</a>
+              <button type="button" className="btn-secondary mt-2 inline-flex" data-testid="reports-download"
+                onClick={() => void downloadFile(trackedId)}>{t('reports.download')}</button>
             ) : (trackedStatus.status === 'pending' || trackedStatus.status === 'processing') ? (
               <p className="mt-1 text-stone-500">{t('reports.polling')}</p>
             ) : null}
@@ -174,7 +208,7 @@ export function ReportsPage() {
                   {row.status === 'failed' && row.error_message && <p className="mt-1 text-xs text-red-800" role="alert">{row.error_message}</p>}
                 </div>
                 {row.status === 'ready' ? (
-                  <a className="btn-secondary shrink-0" href={`/api/v1/reports/${row.id}/download`}>{t('action.download')}</a>
+                  <button type="button" className="btn-secondary shrink-0" onClick={() => void downloadFile(row.id)}>{t('action.download')}</button>
                 ) : (
                   <button type="button" className="btn-secondary shrink-0" onClick={() => { setTrackedId(row.id); setTrackedStatus(row); }}>{t('action.retry')}</button>
                 )}

@@ -180,6 +180,71 @@ plannerRoutes.post('/sessions/:id/move', async (c) => {
   });
 });
 
+/**
+ * Delete a workout so it can be done again (member right, audited):
+ *  - planned sessions are cancelled (removed from the plan flow, still visible in the calendar);
+ *  - completed/in-progress sessions are reset to planned and their execution is
+ *    discarded (excluded from history), so the member can genuinely redo them.
+ */
+plannerRoutes.delete('/sessions/:id', async (c) => {
+  const auth = getAuth(c.env, c);
+  if (!auth) throw unauthorized();
+  const sessionId = c.req.param('id');
+  const session = await c.env.DB.prepare(
+    `SELECT id, user_id, scheduled_date, status FROM scheduled_sessions WHERE id = ?`,
+  )
+    .bind(sessionId)
+    .first<{ id: string; user_id: string; scheduled_date: string; status: string }>();
+  if (!session || session.user_id !== auth.user.id) throw notFound('Session not found.');
+  if (session.status === 'cancelled') throw badRequest('This workout is already deleted.');
+  if (session.status === 'rest') throw badRequest('Rest days cannot be deleted.');
+
+  const now = nowIso();
+  const executions = await c.env.DB.prepare(
+    `SELECT id FROM workout_executions WHERE session_id = ? AND state != 'discarded'`,
+  )
+    .bind(sessionId)
+    .all<{ id: string }>();
+
+  if (session.status === 'planned') {
+    await c.env.DB.prepare(
+      `UPDATE scheduled_sessions SET status = 'cancelled', updated_at = ? WHERE id = ?`,
+    )
+      .bind(now, sessionId)
+      .run();
+  } else {
+    // completed or in_progress: reset to planned and discard executions.
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE scheduled_sessions SET status = 'planned', updated_at = ? WHERE id = ?`,
+      ).bind(now, sessionId),
+      ...executions.results.map((e) =>
+        c.env.DB
+          .prepare(
+            `UPDATE workout_executions SET state = 'discarded', updated_at = ? WHERE id = ?`,
+          )
+          .bind(now, e.id),
+      ),
+    ]);
+  }
+
+  await writeAudit(c.env.DB, {
+    actor: { userId: auth.user.id, role: 'member' },
+    action: session.status === 'planned' ? 'session_cancelled' : 'session_reset_for_redo',
+    targetType: 'scheduled_session',
+    targetId: sessionId,
+    beforeState: { status: session.status, scheduledDate: session.scheduled_date },
+    afterState: { status: session.status === 'planned' ? 'cancelled' : 'planned' },
+  });
+
+  return c.json({
+    ok: true,
+    sessionId,
+    newStatus: session.status === 'planned' ? 'cancelled' : 'planned',
+    discardedExecutions: executions.results.length,
+  });
+});
+
 function findSaferDates(
   targetDate: string,
   workoutDates: Set<string>,

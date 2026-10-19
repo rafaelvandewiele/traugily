@@ -93,17 +93,23 @@ workoutRoutes.get('/today', async (c) => {
           labelKey: 'today.action.resume_workout',
           workoutId: activeWorkout.id,
         }
-      : nextSession
+      : nextSession && nextSession.scheduled_date === today
         ? {
             kind: 'start_workout',
             labelKey: 'today.action.start_workout',
             sessionId: nextSession.id,
           }
-        : plan
-          ? { kind: 'view_plan', labelKey: 'today.action.view_plan' }
-          : onboarding?.onboarding_completed_at
-            ? { kind: 'generate_plan', labelKey: 'today.action.generate_plan' }
-            : { kind: 'start_onboarding', labelKey: 'today.action.start_onboarding' },
+        : nextSession
+          ? {
+              kind: 'rest_today',
+              labelKey: 'today.action.no_workout_today',
+              sessionId: nextSession.id,
+            }
+          : plan
+            ? { kind: 'view_plan', labelKey: 'today.action.view_plan' }
+            : onboarding?.onboarding_completed_at
+              ? { kind: 'generate_plan', labelKey: 'today.action.generate_plan' }
+              : { kind: 'start_onboarding', labelKey: 'today.action.start_onboarding' },
   });
 });
 
@@ -133,17 +139,23 @@ workoutRoutes.post('/start', async (c) => {
   let sessionId: string | null;
   if (body.sessionId) {
     const session = await c.env.DB.prepare(
-      `SELECT id FROM scheduled_sessions WHERE id = ? AND user_id = ?`,
+      `SELECT id, scheduled_date FROM scheduled_sessions WHERE id = ? AND user_id = ?`,
     )
       .bind(body.sessionId, auth.user.id)
-      .first<{ id: string }>();
+      .first<{ id: string; scheduled_date: string }>();
     if (!session) throw notFound('Scheduled session not found.');
+    // Only today's workout can be started now — future sessions wait for their day.
+    if (session.scheduled_date !== todayIso()) {
+      throw badRequest(
+        'This workout is scheduled for another day. You can start it when its day arrives.',
+      );
+    }
     sessionId = session.id;
   } else {
     const next = await c.env.DB.prepare(
       `SELECT ss.id FROM scheduled_sessions ss
        JOIN plans p ON p.current_version_id = ss.version_id
-       WHERE p.user_id = ? AND ss.scheduled_date >= ? AND ss.kind = 'workout' AND ss.status = 'planned'
+       WHERE p.user_id = ? AND ss.scheduled_date = ? AND ss.kind = 'workout' AND ss.status = 'planned'
        ORDER BY ss.scheduled_date LIMIT 1`,
     )
       .bind(auth.user.id, todayIso())
