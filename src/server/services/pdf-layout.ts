@@ -2,6 +2,7 @@
 
 import type { PDFFont, PDFPage } from 'pdf-lib';
 import { rgb } from 'pdf-lib';
+import { sanitizeForPdf } from './pdf-text';
 
 export const BODY_SIZE = 9;
 export const HEAD_SIZE = 13;
@@ -81,7 +82,7 @@ export function drawTable(table: ReportTable, ctx: TableCtx): void {
     let cx = MARGIN;
     const wrapped = cells.map((cell, i) => {
       const colW = (table.columnWidths[i] ?? 1 / cells.length) * width - pad * 2;
-      return wrap(cell ?? '', isHeader ? fontBold : font, BODY_SIZE, Math.max(20, colW));
+      return wrap(sanitizeForPdf(cell ?? ''), isHeader ? fontBold : font, BODY_SIZE, Math.max(20, colW));
     });
     const rowHeight = Math.max(
       rowH,

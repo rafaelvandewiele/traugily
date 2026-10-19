@@ -10,6 +10,16 @@ import { writeAudit } from '../lib/audit';
 import { generateAndStorePlan } from '../services/plan-service';
 import { loadPlanGeneratorInput } from '../services/plan-catalogue';
 
+/** Safe JSON parse with fallback — a single corrupt text column must never 500 a page. */
+function safeJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== 'string' || raw.length === 0) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export const planRoutes = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
 /* ------------------------- Generate draft plan ------------------------- */
@@ -109,7 +119,7 @@ planRoutes.get('/active', async (c) => {
       goalDurationWeeks: plan.goal_duration_weeks,
       safetyAcknowledgedAt: plan.safety_acknowledged_at,
       activatedAt: plan.activated_at,
-      nutritionFramework: JSON.parse(plan.nutrition_framework),
+      nutritionFramework: safeJson(plan.nutrition_framework, {}),
       version: version?.version ?? 1,
     },
     phases: phases.results,
@@ -119,10 +129,10 @@ planRoutes.get('/active', async (c) => {
       id: p.id,
       triggerCode: p.trigger_code,
       reasonKey: p.reason_key,
-      changedFields: JSON.parse(p.changed_fields),
+      changedFields: safeJson(p.changed_fields, []),
       effectiveDate: p.effective_date,
       explanationKey: p.explanation_key,
-      explanationParams: JSON.parse(p.explanation_params),
+      explanationParams: safeJson(p.explanation_params, {}),
       status: p.status,
       createdAt: p.created_at,
     })),

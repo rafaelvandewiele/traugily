@@ -109,6 +109,44 @@ export async function generateReportPdf(
           }>(),
       ]);
 
+    // Full planned plan queries (need plan.id, so run after destructure).
+    let planPhases: { results: Array<{ phase_key: string; title_key: string; purpose: string; start_date: string; end_date: string; position: number }> } | null = null;
+    let weeklySchedules: { results: Array<{ weekday: number; kind: string; label_key: string }> } | null = null;
+    let scheduledSessions: { results: Array<{ id: string; scheduled_date: string; weekday: number; kind: string; title_key: string; focus_key: string; duration_minutes: number }> } | null = null;
+    let sessionExercises: { results: Array<{ id: string; session_id: string; exercise_id: string; position: number; planned_order: number }> } | null = null;
+    let plannedSets: { results: Array<{ id: string; session_exercise_id: string; set_index: number; planned_reps: number | null; planned_weight_kg: number | null; rest_seconds: number | null }> } | null = null;
+    if (plan) {
+      [planPhases, weeklySchedules, scheduledSessions, sessionExercises, plannedSets] =
+        await Promise.all([
+          db
+            .prepare(
+              `SELECT phase_key, title_key, purpose, start_date, end_date, position
+               FROM plan_phases WHERE version_id = ? ORDER BY position`,
+            )
+            .bind(plan.id)
+            .all<{ phase_key: string; title_key: string; purpose: string; start_date: string; end_date: string; position: number }>(),
+          db
+            .prepare(`SELECT weekday, kind, label_key FROM weekly_schedules WHERE version_id = ? ORDER BY weekday`)
+            .bind(plan.id)
+            .all<{ weekday: number; kind: string; label_key: string }>(),
+          db
+            .prepare(
+              `SELECT id, scheduled_date, weekday, kind, title_key, focus_key, duration_minutes
+               FROM scheduled_sessions WHERE version_id = ? ORDER BY scheduled_date`,
+            )
+            .bind(plan.id)
+            .all<{ id: string; scheduled_date: string; weekday: number; kind: string; title_key: string; focus_key: string; duration_minutes: number }>(),
+          db
+            .prepare(`SELECT id, session_id, exercise_id, position, planned_order FROM session_exercises WHERE session_id IN (SELECT id FROM scheduled_sessions WHERE version_id = ?) ORDER BY session_id, position`)
+            .bind(plan.id)
+            .all<{ id: string; session_id: string; exercise_id: string; position: number; planned_order: number }>(),
+          db
+            .prepare(`SELECT id, session_exercise_id, set_index, planned_reps, planned_weight_kg, rest_seconds FROM planned_sets WHERE session_exercise_id IN (SELECT id FROM session_exercises WHERE session_id IN (SELECT id FROM scheduled_sessions WHERE version_id = ?)) ORDER BY session_exercise_id, set_index`)
+            .bind(plan.id)
+            .all<{ id: string; session_exercise_id: string; set_index: number; planned_reps: number | null; planned_weight_kg: number | null; rest_seconds: number | null }>(),
+        ]);
+    }
+
     const h = reportHeadings(input.reportLocale);
     const locale = input.reportLocale;
     const tz = user?.timezone ?? 'UTC';
@@ -171,6 +209,71 @@ export async function generateReportPdf(
             ],
           })),
         },
+      });
+    }
+
+    // §12 full planned plan (standard/detailed): per week, per session,
+    // per exercise with sets/reps/weight — the whole training plan visible any time.
+    if (plan && input.detailLevel !== 'summary' && planPhases && weeklySchedules &&
+        scheduledSessions && sessionExercises && plannedSets) {
+      const exercisesBySession = new Map<string, typeof sessionExercises.results[0][]>();
+      for (const se of sessionExercises.results) {
+        const arr = exercisesBySession.get(se.session_id) ?? [];
+        arr.push(se);
+        exercisesBySession.set(se.session_id, arr);
+      }
+      const setsByExercise = new Map<string, typeof plannedSets.results[0][]>();
+      for (const ps of plannedSets.results) {
+        const arr = setsByExercise.get(ps.session_exercise_id) ?? [];
+        arr.push(ps);
+        setsByExercise.set(ps.session_exercise_id, arr);
+      }
+      const weeklyPlan: Array<{ week: number; sessions: Array<{ date: string; title: string; exercises: Array<{ name: string; sets: string }> }> }> = [];
+      for (const phase of planPhases.results) {
+        const phaseSessions = scheduledSessions.results.filter((s) => {
+          const d = new Date(s.scheduled_date);
+          const ps = new Date(phase.start_date);
+          const pe = new Date(phase.end_date);
+          return d >= ps && d <= pe;
+        });
+        if (phaseSessions.length === 0) continue;
+        const weekEntries = phaseSessions.map((s) => {
+          const exs = exercisesBySession.get(s.id) ?? [];
+          return {
+            date: s.scheduled_date,
+            title: s.title_key,
+            exercises: exs.map((ex) => {
+              const ps = setsByExercise.get(ex.id) ?? [];
+              return {
+                name: ex.exercise_id,
+                sets: ps.map((x) => `${x.planned_reps ?? '?'} × ${x.planned_weight_kg ?? '?'}kg`).join(', '),
+              };
+            }),
+          };
+        });
+        weeklyPlan.push({
+          week: phase.position,
+          sessions: weekEntries,
+        });
+      }
+
+      const planItems: string[] = [];
+      for (const w of weeklyPlan) {
+        planItems.push(`Week ${w.week}:`);
+        for (const sess of w.sessions) {
+          planItems.push(`  ${sess.date} — ${sess.title}`);
+          for (const ex of sess.exercises) {
+            planItems.push(`    • ${ex.name}: ${ex.sets}`);
+          }
+        }
+      }
+      sections.push({
+        kind: 'heading',
+        text: 'Full training plan (per week)',
+      });
+      sections.push({
+        kind: 'bullets',
+        items: planItems.length > 0 ? planItems : ['No sessions planned.'],
       });
     }
 

@@ -90,6 +90,17 @@ workoutActionRoutes.post('/:id/sets', async (c) => {
     .bind(workoutId, pe.id, d.setIndex)
     .first<{ id: string | null }>();
 
+  // Keep performed_exercises.status truthful (the finish summary counts it):
+  // a real set completes the exercise, an empty note-only row leaves it pending.
+  const hasRealActual = (d.actualReps ?? 0) > 0 || (d.actualWeightKg ?? 0) > 0;
+  if (d.status === 'completed' && hasRealActual) {
+    await c.env.DB.prepare(
+      `UPDATE performed_exercises SET status = 'completed' WHERE id = ? AND status = 'pending'`,
+    )
+      .bind(pe.id)
+      .run();
+  }
+
   // Planned and actual both retained: planned_set_id untouched, actuals written separately.
   await c.env.DB.prepare(
     `INSERT INTO set_logs (id, workout_id, performed_exercise_id, set_index, planned_set_id,

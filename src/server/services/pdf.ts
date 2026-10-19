@@ -15,6 +15,7 @@ import {
   wrap,
   type ReportTable,
 } from './pdf-layout';
+import { sanitizeForPdf } from './pdf-text';
 
 export type ReportSection =
   | { kind: 'heading'; text: string }
@@ -31,7 +32,7 @@ export type ReportInput = {
 
 export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  doc.setTitle(input.title);
+  doc.setTitle(sanitizeForPdf(input.title));
   doc.setCreator('Traugily');
   doc.setProducer('Traugily report service');
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -57,14 +58,14 @@ export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
     const f = opts.bold ? fontBold : font;
     const color = opts.color ?? DARK;
     const maxWidth = opts.maxWidth ?? width;
-    for (const line of wrap(text, f, size, maxWidth)) {
+    for (const line of wrap(sanitizeForPdf(text), f, size, maxWidth)) {
       ensureSpace(size + 3);
       page.drawText(line, { x: MARGIN, y, size, font: f, color });
       y -= size + 3;
     }
   };
 
-  page.drawText(input.title, { x: MARGIN, y, size: TITLE_SIZE, font: fontBold, color: TEAL });
+  page.drawText(sanitizeForPdf(input.title), { x: MARGIN, y, size: TITLE_SIZE, font: fontBold, color: TEAL });
   y -= TITLE_SIZE + 6;
   drawLine(input.subtitle, { size: BODY_SIZE + 1, color: MUTED });
   y -= 6;
@@ -78,9 +79,11 @@ export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
 
   for (const item of input.meta) {
     ensureSpace(14);
-    page.drawText(`${item.label}:`, { x: MARGIN, y, size: BODY_SIZE, font: fontBold, color: DARK });
-    const labelW = fontBold.widthOfTextAtSize(`${item.label}:`, BODY_SIZE);
-    page.drawText(item.value, {
+    const safeLabel = sanitizeForPdf(item.label);
+    const safeValue = sanitizeForPdf(item.value);
+    page.drawText(`${safeLabel}:`, { x: MARGIN, y, size: BODY_SIZE, font: fontBold, color: DARK });
+    const labelW = fontBold.widthOfTextAtSize(`${safeLabel}:`, BODY_SIZE);
+    page.drawText(safeValue, {
       x: MARGIN + labelW + 6,
       y,
       size: BODY_SIZE,

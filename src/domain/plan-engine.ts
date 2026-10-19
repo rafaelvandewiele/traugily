@@ -57,14 +57,24 @@ const FOCUS_TEMPLATES: Record<string, string[][]> = {
     ['squat'],
     ['horizontal_push'],
     ['horizontal_pull'],
-    ['hinge'],
+    ['hinge', 'lunge'],
     ['core_anti_rotation', 'core_flexion'],
   ],
-  push: [['horizontal_push'], ['vertical_push'], ['core_flexion']],
-  pull: [['horizontal_pull'], ['vertical_pull'], ['core_anti_rotation']],
-  legs: [['squat'], ['lunge'], ['hinge']],
+  push: [['horizontal_push'], ['vertical_push'], ['horizontal_push'], ['core_flexion'], ['core_anti_rotation']],
+  pull: [['horizontal_pull'], ['vertical_pull'], ['horizontal_pull'], ['core_anti_rotation'], ['core_flexion']],
+  legs: [['squat'], ['lunge'], ['hinge'], ['squat', 'lunge'], ['core_flexion']],
   cardio: [['cardio_steady', 'cardio_intervals']],
 };
+
+/** Dumbbells come in 2 kg steps (2, 4, 6, 8, …) — snap dumbbell loads to them. */
+export function snapDumbbellLoad(weightKg: number | null): number | null {
+  if (weightKg == null) return null;
+  return Math.max(2, Math.round(weightKg / 2) * 2);
+}
+
+function usesDumbbells(ex: CatalogExercise): boolean {
+  return ex.equipment.some((e) => e === 'dumbbells' || e === 'free_weights');
+}
 
 function pickSessionExercises(
   focus: string,
@@ -74,7 +84,10 @@ function pickSessionExercises(
 ): CatalogExercise[] {
   const selected: CatalogExercise[] = [];
   for (const patterns of FOCUS_TEMPLATES[focus] ?? FOCUS_TEMPLATES.full_body) {
-    const pool = byPattern(patterns, input, usedRecently);
+    // Also exclude picks made earlier in THIS session: a repeated pattern in the
+    // template must select a different exercise (session_exercises is unique on
+    // (session_id, exercise_id)).
+    const pool = byPattern(patterns, input, [...usedRecently, ...selected.map((s) => s.id)]);
     const pick = pool.length > 0 ? pool[Math.floor(rnd() * pool.length)] : null;
     if (pick) selected.push(pick);
   }
@@ -103,6 +116,8 @@ function startingLoad(
       ex.skillLevel === 'beginner' ? 0.2 : ex.skillLevel === 'intermediate' ? 0.35 : 0.5;
     const raw = input.weightKg * baseRatio * (setIndex === 1 ? 0.85 : 1);
     weightKg = Math.round(raw * 2) / 2; // round to 0.5 kg
+    // Dumbbells only come in 2 kg steps.
+    if (usesDumbbells(ex)) weightKg = snapDumbbellLoad(weightKg);
   }
   return { reps, weightKg, rir, restSeconds };
 }
@@ -160,6 +175,7 @@ export function generatePlan(input: PlanGeneratorInput): PlanDraft {
 
   const sessions: ScheduledSessionPlan[] = [];
   const recentExerciseIds: string[] = [];
+  const weekExerciseLoads = new Map<string, number>(); // exerciseId -> load used this week
   const startWeekday = weekdayOf(input.startDate);
   let sessionCounter = 0;
 
@@ -167,6 +183,8 @@ export function generatePlan(input: PlanGeneratorInput): PlanDraft {
     const weekStart = addDaysISO(input.startDate, week * 7);
     const weekPhase = phases.find((p) => weekStart >= p.startDate && weekStart <= p.endDate);
     const isDeload = weekPhase?.phaseKey === 'review' && week === totalWeeks - 1;
+    // Reset per-week load tracking so repeat exercises get varied loads each week.
+    weekExerciseLoads.clear();
     for (const wd of trainingDays) {
       const offset = (wd - startWeekday + 7) % 7;
       const date = addDaysISO(weekStart, offset);
@@ -181,19 +199,30 @@ export function generatePlan(input: PlanGeneratorInput): PlanDraft {
       }
       const setCount = isDeload ? 2 : input.minutesPerSession <= 30 ? 2 : 3;
       const exercises: SessionExercisePlan[] = picked.map((ex, idx) => {
+        // Varied load when the same exercise repeats within a week so it isn't
+        // identical every time (keeps progression honest when a set feels too easy).
+        const baseLoad = startingLoad(input, ex, 1);
+        const priorLoad = weekExerciseLoads.get(ex.id);
+        const loadVariation = priorLoad != null ? (0.85 + rnd() * 0.3) : 1; // ±15%
+        let exerciseWeight = baseLoad.weightKg;
+        if (exerciseWeight != null && priorLoad != null) {
+          exerciseWeight = usesDumbbells(ex)
+            ? snapDumbbellLoad(exerciseWeight * loadVariation)
+            : Math.max(1, Math.round(exerciseWeight * loadVariation * 2) / 2);
+        }
+        if (exerciseWeight != null) weekExerciseLoads.set(ex.id, exerciseWeight);
+
         const sets: PlannedSet[] = Array.from({ length: setCount }, (_, s) => {
-          const load = startingLoad(input, ex, s + 1);
           return {
             id: `set_${sessionId}_${ex.id}_${s + 1}`,
             setIndex: s + 1,
-            plannedReps: isDeload ? Math.max(5, load.reps - 2) : load.reps,
-            plannedWeightKg: load.weightKg,
-            plannedDurationSeconds: ex.movementPattern.startsWith('cardio')
-              ? input.minutesPerSession * 6
-              : null,
+            plannedReps: isDeload ? Math.max(5, baseLoad.reps - 2) : baseLoad.reps,
+            plannedWeightKg: exerciseWeight,
+            plannedDurationSeconds:
+              ex.movementPattern.startsWith('cardio') ? input.minutesPerSession * 6 : null,
             plannedRpe: isDeload ? 6 : 7,
-            plannedRir: load.rir,
-            restSeconds: load.restSeconds,
+            plannedRir: baseLoad.rir,
+            restSeconds: baseLoad.restSeconds,
             setType: s === 0 && input.experienceLevel === 'new' ? 'warmup' : 'working',
           };
         });
