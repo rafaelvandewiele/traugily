@@ -54,7 +54,7 @@ describe('ReportsPage', () => {
     expect(mockedApi).not.toHaveBeenCalledWith('/reports', expect.objectContaining({ method: 'POST' }));
   });
 
-  it('202 -> polls status -> shows download link', async () => {
+  it('202 -> polls status -> downloads PDF via fetch blob (no navigation)', async () => {
     let statusCalls = 0;
     mockedApi.mockImplementation(async (path: string, opts?: { method?: string }) => {
       if (path === '/reports' && (opts as { method?: string } | undefined)?.method === 'POST') return { exportId: 'rpt_1', status: 'pending' } as unknown as never;
@@ -66,12 +66,60 @@ describe('ReportsPage', () => {
       }
       throw new Error('unexpected ' + path);
     });
-    renderPage();
-    await screen.findByTestId('reports-page');
-    fireEvent.click(screen.getAllByTestId('reports-generate')[0]);
-    await waitFor(() => expect(screen.getByTestId('reports-status')).toBeInTheDocument(), { timeout: 4000 });
-    await waitFor(() => expect(screen.getByTestId('reports-download')).toBeInTheDocument(), { timeout: 8000 });
-    expect(screen.getByTestId('reports-download')).toHaveAttribute('href', '/api/v1/reports/rpt_1/download');
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+    const fetchMock = vi.fn(async () =>
+      new Response(new Blob([pdfBytes], { type: 'application/pdf' }), {
+        status: 200,
+        headers: { 'content-type': 'application/pdf' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const createUrl = vi.fn(() => 'blob:fake');
+    const revokeUrl = vi.fn();
+    Object.defineProperty(window.URL, 'createObjectURL', { value: createUrl, configurable: true });
+    Object.defineProperty(window.URL, 'revokeObjectURL', { value: revokeUrl, configurable: true });
+    try {
+      renderPage();
+      await screen.findByTestId('reports-page');
+      fireEvent.click(screen.getAllByTestId('reports-generate')[0]);
+      await waitFor(() => expect(screen.getByTestId('reports-download')).toBeInTheDocument(), { timeout: 8000 });
+      const button = screen.getByTestId('reports-download');
+      expect(button.tagName).toBe('BUTTON');
+      fireEvent.click(button);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/reports/rpt_1/download',
+        expect.objectContaining({ credentials: 'same-origin' }),
+      ), { timeout: 4000 });
+      expect(createUrl).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }, 15000);
+
+  it('shows an inline error when the download response is not a PDF', async () => {
+    mockedApi.mockImplementation(async (path: string, opts?: { method?: string }) => {
+      if (path === '/reports' && (opts as { method?: string } | undefined)?.method === 'POST') return { exportId: 'rpt_2', status: 'pending' } as unknown as never;
+      if (path === '/reports') return { exports: [] } as unknown as never;
+      if (path === '/reports/rpt_2/status') return { id: 'rpt_2', status: 'ready', file_size: 2048, error_message: null, attempts: 1, completed_at: '2026-03-01T00:00:00Z' } as unknown as never;
+      throw new Error('unexpected ' + path);
+    });
+    // Server returns the SPA shell HTML instead of a file.
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response('<html>shell</html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    ));
+    try {
+      renderPage();
+      await screen.findByTestId('reports-page');
+      fireEvent.click(screen.getAllByTestId('reports-generate')[0]);
+      await waitFor(() => expect(screen.getByTestId('reports-download')).toBeInTheDocument(), { timeout: 8000 });
+      fireEvent.click(screen.getByTestId('reports-download'));
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/not available yet/i), { timeout: 4000 });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   }, 15000);
 
   it('surfaces failed status with error text', async () => {

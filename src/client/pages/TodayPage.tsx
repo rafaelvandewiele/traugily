@@ -102,9 +102,13 @@ export function TodayPage() {
             ? t('today.action.resume_workout')
             : data.nextAction.kind === 'start_workout'
               ? t('today.action.start_workout')
-              : data.nextAction.kind === 'view_plan'
-                ? t('today.action.view_plan')
-                : t('today.action.start_onboarding')}
+              : data.nextAction.kind === 'rest_today'
+                ? t('today.action.no_workout_today')
+                : data.nextAction.kind === 'view_plan'
+                  ? t('today.action.view_plan')
+                  : data.nextAction.kind === 'generate_plan'
+                    ? t('today.action.generate_plan')
+                    : t('today.action.start_onboarding')}
         </h2>
 
         {data.nextSession && (

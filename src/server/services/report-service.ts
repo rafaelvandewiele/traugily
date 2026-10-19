@@ -38,12 +38,12 @@ export async function generateReportPdf(
           .first<{ activity_level: string; weight_kg: number | null }>(),
         db
           .prepare(
-            `SELECT p.id, p.goal_duration_weeks, pv.version FROM plans p
+            `SELECT p.id, p.current_version_id AS version_id, p.goal_duration_weeks, pv.version FROM plans p
              JOIN plan_versions pv ON pv.id = p.current_version_id
              WHERE p.user_id = ? AND p.status = 'active' LIMIT 1`,
           )
           .bind(userId)
-          .first<{ id: string; goal_duration_weeks: number; version: number }>(),
+          .first<{ id: string; version_id: string; goal_duration_weeks: number; version: number }>(),
         db
           .prepare(`SELECT goal_type FROM goals WHERE user_id = ? ORDER BY priority`)
           .bind(userId)
@@ -109,40 +109,38 @@ export async function generateReportPdf(
           }>(),
       ]);
 
-    // Full planned plan queries (need plan.id, so run after destructure).
+    // Full planned plan queries (need the plan version id, so run after destructure).
+    // NOTE: scheduled data joins on the plan VERSION id (plan.version_id), which
+    // is also what /plans/active and /planner/month use — never the plan row id.
     let planPhases: { results: Array<{ phase_key: string; title_key: string; purpose: string; start_date: string; end_date: string; position: number }> } | null = null;
-    let weeklySchedules: { results: Array<{ weekday: number; kind: string; label_key: string }> } | null = null;
     let scheduledSessions: { results: Array<{ id: string; scheduled_date: string; weekday: number; kind: string; title_key: string; focus_key: string; duration_minutes: number }> } | null = null;
     let sessionExercises: { results: Array<{ id: string; session_id: string; exercise_id: string; position: number; planned_order: number }> } | null = null;
     let plannedSets: { results: Array<{ id: string; session_exercise_id: string; set_index: number; planned_reps: number | null; planned_weight_kg: number | null; rest_seconds: number | null }> } | null = null;
     if (plan) {
-      [planPhases, weeklySchedules, scheduledSessions, sessionExercises, plannedSets] =
+      const versionId = plan.version_id;
+      [planPhases, scheduledSessions, sessionExercises, plannedSets] =
         await Promise.all([
           db
             .prepare(
               `SELECT phase_key, title_key, purpose, start_date, end_date, position
                FROM plan_phases WHERE version_id = ? ORDER BY position`,
             )
-            .bind(plan.id)
+            .bind(versionId)
             .all<{ phase_key: string; title_key: string; purpose: string; start_date: string; end_date: string; position: number }>(),
-          db
-            .prepare(`SELECT weekday, kind, label_key FROM weekly_schedules WHERE version_id = ? ORDER BY weekday`)
-            .bind(plan.id)
-            .all<{ weekday: number; kind: string; label_key: string }>(),
           db
             .prepare(
               `SELECT id, scheduled_date, weekday, kind, title_key, focus_key, duration_minutes
                FROM scheduled_sessions WHERE version_id = ? ORDER BY scheduled_date`,
             )
-            .bind(plan.id)
+            .bind(versionId)
             .all<{ id: string; scheduled_date: string; weekday: number; kind: string; title_key: string; focus_key: string; duration_minutes: number }>(),
           db
             .prepare(`SELECT id, session_id, exercise_id, position, planned_order FROM session_exercises WHERE session_id IN (SELECT id FROM scheduled_sessions WHERE version_id = ?) ORDER BY session_id, position`)
-            .bind(plan.id)
+            .bind(versionId)
             .all<{ id: string; session_id: string; exercise_id: string; position: number; planned_order: number }>(),
           db
             .prepare(`SELECT id, session_exercise_id, set_index, planned_reps, planned_weight_kg, rest_seconds FROM planned_sets WHERE session_exercise_id IN (SELECT id FROM session_exercises WHERE session_id IN (SELECT id FROM scheduled_sessions WHERE version_id = ?)) ORDER BY session_exercise_id, set_index`)
-            .bind(plan.id)
+            .bind(versionId)
             .all<{ id: string; session_exercise_id: string; set_index: number; planned_reps: number | null; planned_weight_kg: number | null; rest_seconds: number | null }>(),
         ]);
     }
@@ -214,7 +212,7 @@ export async function generateReportPdf(
 
     // §12 full planned plan (standard/detailed): per week, per session,
     // per exercise with sets/reps/weight — the whole training plan visible any time.
-    if (plan && input.detailLevel !== 'summary' && planPhases && weeklySchedules &&
+    if (plan && input.detailLevel !== 'summary' && planPhases &&
         scheduledSessions && sessionExercises && plannedSets) {
       const exercisesBySession = new Map<string, typeof sessionExercises.results[0][]>();
       for (const se of sessionExercises.results) {

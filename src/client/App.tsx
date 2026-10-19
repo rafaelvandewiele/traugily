@@ -15,6 +15,7 @@ import { LogPage } from './pages/LogPage';
 import { WorkoutPlayerPage } from './pages/WorkoutPlayerPage';
 import { ProgressPage } from './pages/ProgressPage';
 import { ReportsPage } from './pages/ReportsPage';
+import { CalendarPage } from './pages/CalendarPage';
 import { AccountPage } from './pages/AccountPage';
 import { AdminPage } from './pages/AdminPage';
 
@@ -110,6 +111,7 @@ export function App() {
               <Route path="workout/:workoutId" element={<WorkoutPlayerPage />} />
               <Route path="progress" element={<ProgressPage />} />
               <Route path="reports" element={<ReportsPage />} />
+              <Route path="calendar" element={<CalendarPage />} />
               <Route path="account" element={<AccountPage />} />
               <Route
                 path="admin"

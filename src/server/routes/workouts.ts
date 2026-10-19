@@ -2,7 +2,7 @@
 
 import { Hono } from 'hono';
 import type { Env, AppVariables } from '../env';
-import { notFound, unauthorized } from '../lib/errors';
+import { badRequest, notFound, unauthorized } from '../lib/errors';
 import { newId, nowIso, todayIso } from '../lib/ids';
 import { getAuth } from '../middleware/auth';
 

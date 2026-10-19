@@ -140,6 +140,15 @@ export function ReportsPage() {
     }
   }
 
+  async function downloadFile(exportId: string) {
+    setFormError(null);
+    try {
+      await downloadReportFile(exportId);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : t('error.generic'));
+    }
+  }
+
   if (error && exports === null) return <ErrorState message={error} onRetry={() => void loadList()} />;
 
   return (

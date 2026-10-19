@@ -433,7 +433,20 @@ export function WorkoutPlayerPage() {
   }
 
   async function skipExercise(ex: ExerciseData) {
-    await queueAndSync('exercise_skipped', { exerciseId: ex.exercise_id, reason: skipReason });
+    try {
+      // Direct API call when online — the queue is only for real offline.
+      await api(`/workouts/${workoutId}/skip`, {
+        method: 'POST',
+        body: { exerciseId: ex.exercise_id, reason: skipReason },
+      });
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === 'network_error') {
+        await queueAndSync('exercise_skipped', { exerciseId: ex.exercise_id, reason: skipReason });
+      } else {
+        setError(err instanceof Error ? err.message : t('error.generic'));
+        return; // keep the dialog open so the member can retry or cancel
+      }
+    }
     setShowSkip(false);
     await load();
     setActiveIdx(Math.min(activeIdx + 1, Math.max(0, (detail?.exercises.length ?? 1) - 1)));
@@ -448,7 +461,20 @@ export function WorkoutPlayerPage() {
     order[idx] = order[target];
     order[target] = tmp;
     setDetail({ ...detail, exercises: order });
-    await queueAndSync('exercise_reordered', { order: order.map((e) => e.exercise_id) });
+    const ids = order.map((e) => e.exercise_id);
+    try {
+      await api(`/workouts/${workoutId}/reorder`, {
+        method: 'POST',
+        body: { order: ids, clientEventId: uuid() },
+      });
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === 'network_error') {
+        await queueAndSync('exercise_reordered', { order: ids });
+      } else {
+        setError(err instanceof Error ? err.message : t('error.generic'));
+        await load(); // restore server truth after a failed optimistic move
+      }
+    }
   }
 
   async function reportPain() {
@@ -470,10 +496,39 @@ export function WorkoutPlayerPage() {
     }
   }
 
+  /** Flush offline-queued events before finishing so skips/sets land in the summary. */
+  async function flushQueuedEvents(): Promise<void> {
+    const queued = await listQueuedEvents(workoutId);
+    if (queued.length === 0) return;
+    const fresh = await api<WorkoutDetail>(`/workouts/${workoutId}/state`);
+    const freshLocal = await loadLocalWorkout(workoutId);
+    const body = {
+      clientWorkoutId: workoutId,
+      baseServerVersion: freshLocal?.serverVersion ?? fresh.serverVersion,
+      events: queued,
+    };
+    try {
+      await api(`/workouts/${workoutId}/sync`, { method: 'POST', body });
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === 'version_conflict') {
+        // Drift came from this device's own direct saves — audited rebase applies
+        // the member's queued events instead of losing them.
+        await api(`/workouts/${workoutId}/sync`, {
+          method: 'POST',
+          body: { ...body, rebase: true },
+        });
+      } else {
+        throw err;
+      }
+    }
+    for (const ev of queued) await removeQueuedEvent(ev.clientEventId);
+  }
+
   async function finishWorkout() {
     if (busy) return;
     setBusy(true);
     try {
+      await flushQueuedEvents();
       const res = await api<{ summary: Record<string, number | string> }>(
         `/workouts/${workoutId}/finish`,
         { method: 'POST', body: { clientWorkoutId: workoutId } },
